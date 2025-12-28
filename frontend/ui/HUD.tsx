@@ -18,9 +18,10 @@ interface HUDProps {
   isTurnBlocked: boolean;
   musicEnabled: boolean;
   onToggleMusic: () => void;
+  onOpenRules: () => void;
 }
 
-export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRemaining, actionMode, winner, coins, deckSize, handSize, discardSize, gameState, onViewDiscard, onEndTurn, isTurnBlocked, musicEnabled, onToggleMusic }) => {
+export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRemaining, actionMode, winner, coins, deckSize, handSize, discardSize, gameState, onViewDiscard, onEndTurn, isTurnBlocked, musicEnabled, onToggleMusic, onOpenRules }) => {
   const controlBonuses = getControlBonuses(gameState, currentPlayer);
   
   const hudStyle: React.CSSProperties = {
@@ -148,6 +149,12 @@ export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRema
           disabled={discardSize === 0}
         >
           View Discard ({discardSize})
+        </button>
+        <button
+          style={buttonStyle(false)}
+          onClick={onOpenRules}
+        >
+          Rules
         </button>
         <button
           style={buttonStyle(false)}

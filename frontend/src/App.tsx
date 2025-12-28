@@ -7,6 +7,7 @@ import { HUD } from '../ui/HUD';
 import { BackgroundMusic } from '../ui/BackgroundMusic';
 import { DeckPicker } from '../ui/DeckPicker';
 import { DiscardViewer } from '../ui/DiscardViewer';
+import { RulesModal } from '../ui/RulesModal';
 import type { GameState, Tile, Unit, Player, Position } from './game/GameState';
 import { createInitialGrid } from './game/setup';
 import { applyMove, applyAttack, applyDeploy, applySpell, applyRotate, endTurn, controlsAllPoints, sellCard, createDeck, drawCard, canRecruit, applyRecruit, applyRetrieveFromDiscard, getControlBonuses } from './game/rules';
@@ -23,6 +24,7 @@ function App() {
   const [isDiscardViewerOpen, setIsDiscardViewerOpen] = useState<boolean>(false);
   const [activeSpellOverlay, setActiveSpellOverlay] = useState<{ position: Position; spellType: 'lightning' | 'healing'; ownerId: number } | null>(null);
   const [musicEnabled, setMusicEnabled] = useState<boolean>(true);
+  const [isRulesOpen, setIsRulesOpen] = useState<boolean>(false);
   
   const spellTimeoutRef = useRef<number | null>(null);
 
@@ -95,6 +97,14 @@ function App() {
 
   const toggleMusic = () => {
     setMusicEnabled((prev) => !prev);
+  };
+
+  const openRules = () => {
+    setIsRulesOpen(true);
+  };
+
+  const closeRules = () => {
+    setIsRulesOpen(false);
   };
 
   const handleMove = (unitId: string, target: Position) => {
@@ -699,10 +709,14 @@ function App() {
         gameState={gameState}
         onViewDiscard={handleViewDiscard}
         onEndTurn={endTurnManually}
-        isTurnBlocked={activeSpellOverlay !== null}
+        isTurnBlocked={activeSpellOverlay !== null || isRulesOpen}
         musicEnabled={musicEnabled}
         onToggleMusic={toggleMusic}
+        onOpenRules={openRules}
       />
+      {isRulesOpen && (
+        <RulesModal onClose={closeRules} />
+      )}
       {winner !== null && (
         <div style={winnerMessageStyle}>
           Player {winner} Wins!
