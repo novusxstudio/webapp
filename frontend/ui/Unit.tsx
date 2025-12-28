@@ -29,10 +29,7 @@ export const Unit: React.FC<UnitProps> = ({ unitId, ownerId, unitSize }) => {
       swordsman: 'SW',
       archer: 'AR',
       shieldman: 'SH',
-      heavyswordsman: 'HS',
-      cannoneer: 'CA',
-      horseman: 'HO',
-      armoredhorseman: 'AH',
+      cavalry: 'CV',
     };
     
     return abbreviations[unitType] || unitType.substring(0, 2).toUpperCase();

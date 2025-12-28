@@ -1,19 +1,13 @@
 import React from 'react';
-import type { GameState } from '../src/game/GameState';
-import { getControlBonuses } from '../src/game/rules';
+// Simplified HUD: no game state-derived resources
 
 interface HUDProps {
   currentPlayer: number;
   turnNumber: number;
   actionsRemaining: number;
   actionMode: string;
+  freeDeploymentsRemaining: number;
   winner: number | null;
-  coins: number;
-  deckSize: number;
-  handSize: number;
-  discardSize: number;
-  gameState: GameState;
-  onViewDiscard: () => void;
   onEndTurn: () => void;
   isTurnBlocked: boolean;
   musicEnabled: boolean;
@@ -21,8 +15,7 @@ interface HUDProps {
   onOpenRules: () => void;
 }
 
-export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRemaining, actionMode, winner, coins, deckSize, handSize, discardSize, gameState, onViewDiscard, onEndTurn, isTurnBlocked, musicEnabled, onToggleMusic, onOpenRules }) => {
-  const controlBonuses = getControlBonuses(gameState, currentPlayer);
+export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRemaining, actionMode, freeDeploymentsRemaining, winner, onEndTurn, isTurnBlocked, musicEnabled, onToggleMusic, onOpenRules }) => {
   
   const hudStyle: React.CSSProperties = {
     width: '100%',
@@ -109,47 +102,13 @@ export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRema
           <span style={labelStyle}>Actions Remaining</span>
           <span style={valueStyle}>{actionsRemaining}</span>
         </div>
-
         <div style={itemStyle}>
-          <span style={labelStyle}>Coins</span>
-          <span style={valueStyle}>💰 {coins}</span>
+          <span style={labelStyle}>Deployments</span>
+          <span style={valueStyle}>{freeDeploymentsRemaining}</span>
         </div>
-
-        <div style={itemStyle}>
-          <span style={labelStyle}>Deck</span>
-          <span style={valueStyle}>📚 {deckSize}</span>
-        </div>
-
-        <div style={itemStyle}>
-          <span style={labelStyle}>Hand</span>
-          <span style={valueStyle}>🃏 {handSize}</span>
-        </div>
-
-        <div style={itemStyle}>
-          <span style={labelStyle}>Discard</span>
-          <span style={valueStyle}>🗑️ {discardSize}</span>
-        </div>
-
-        {(controlBonuses.bonusCoins > 0 || controlBonuses.bonusActions > 0) && (
-          <div style={itemStyle}>
-            <span style={labelStyle}>Control Bonuses</span>
-            <span style={{ ...valueStyle, color: '#059669' }}>
-              {controlBonuses.bonusCoins > 0 && `+${controlBonuses.bonusCoins} coins`}
-              {controlBonuses.bonusCoins > 0 && controlBonuses.bonusActions > 0 && ', '}
-              {controlBonuses.bonusActions > 0 && `+${controlBonuses.bonusActions} action`}
-            </span>
-          </div>
-        )}
       </div>
 
       <div style={rightSectionStyle}>
-        <button 
-          style={buttonStyle(discardSize === 0)} 
-          onClick={onViewDiscard}
-          disabled={discardSize === 0}
-        >
-          View Discard ({discardSize})
-        </button>
         <button
           style={buttonStyle(false)}
           onClick={onOpenRules}

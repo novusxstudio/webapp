@@ -83,66 +83,44 @@ export const RulesModal: React.FC<RulesModalProps> = ({ onClose }) => {
         <div>
           <h2 style={sectionTitleStyle}>Objective</h2>
           <p style={paragraphStyle}>
-            Capture and control all control points or outmaneuver your opponent through strategic unit placement, attacks, and spellcasting.
+            Control all control points or tactically eliminate enemy units. No cards, coins, HP, or randomness.
           </p>
 
           <h2 style={sectionTitleStyle}>Turn Structure</h2>
           <ul style={listStyle}>
-            <li>Each player begins their turn with 1 action.</li>
-            <li>Actions are spent on moving, attacking, deploying units, casting spells, rotating units, recruiting, drawing, selling, or retrieving from discard (as permitted).</li>
-            <li>When actions reach 0, the turn ends automatically.</li>
+            <li>Each player has 1 action per turn.</li>
+            <li>Actions: move, attack, or rotate units.</li>
+            <li>Turn ends automatically when actions reach 0.</li>
           </ul>
 
-          <h2 style={sectionTitleStyle}>Board & Units</h2>
+          <h2 style={sectionTitleStyle}>One-Shot Combat</h2>
           <ul style={listStyle}>
-            <li>The board is a 5x5 grid. Units occupy tiles and may face a direction.</li>
-            <li>Movement and attack rules depend on unit type; attacks reduce enemy health.</li>
-            <li>Rotating a unit changes its facing direction without moving its position.</li>
+            <li>All combat resolves instantly. Units are removed immediately on resolution.</li>
+            <li>No HP, damage numbers, or randomness.</li>
           </ul>
 
-          <h2 style={sectionTitleStyle}>Cards & Deck</h2>
+          <h2 style={sectionTitleStyle}>Archer Rules</h2>
           <ul style={listStyle}>
-            <li>Players have a deck, hand, and discard pile. You draw cards at game start.</li>
-            <li>Unit cards can be deployed to empty tiles you control (subject to rules).</li>
-            <li>Certain actions may move cards between hand, deck, and discard.</li>
+            <li>Cannot attack if line-of-sight is blocked by any unit.</li>
+            <li>Cannot fire over units.</li>
+            <li>Always lose in close-range (adjacent) combat.</li>
+            <li>Instantly kill enemies at range when line-of-sight is clear.</li>
           </ul>
 
-          <h2 style={sectionTitleStyle}>Coins</h2>
+          <h2 style={sectionTitleStyle}>Unit Matchups</h2>
           <ul style={listStyle}>
-            <li>Coins are used to recruit and perform certain actions.</li>
-            <li>Control points and specific effects may grant bonus coins at turn start.</li>
+            <li>Swordsman beats: Swordsman, Spearman, Cavalry, Archer.</li>
+            <li>Shieldman beats: Archer, Cavalry, Spearman.</li>
+            <li>Spearman beats: Swordsman, Spearman, Shieldman, Cavalry, Archer.</li>
+            <li>Cavalry beats: Cavalry, Spearman, Archer.</li>
+            <li>Archer vs Archer: both are removed.</li>
           </ul>
 
-          <h2 style={sectionTitleStyle}>Control Points</h2>
+          <h2 style={sectionTitleStyle}>Board</h2>
           <ul style={listStyle}>
-            <li>Tiles marked as control points grant bonuses when controlled.</li>
-            <li>Controlling all points can immediately win the game.</li>
+            <li>5x5 grid with control points. Controlling all points wins.</li>
+            <li>Movement and attack ranges depend on unit type.</li>
           </ul>
-
-          <h2 style={sectionTitleStyle}>Spells</h2>
-          <ul style={listStyle}>
-            <li>Spells target tiles and show a brief overlay effect when cast.</li>
-            <li>Lightning Strike deals damage that ignores defense.</li>
-            <li>Healing restores health to friendly units in range.</li>
-          </ul>
-
-          <h2 style={sectionTitleStyle}>Recruitment & Other Actions</h2>
-          <ul style={listStyle}>
-            <li>Recruitment adds units to your deck/hand as specified by the card/effect.</li>
-            <li>Retrieve from discard returns a card to hand if allowed.</li>
-            <li>Selling a card grants coins according to the rules.</li>
-          </ul>
-
-          <h2 style={sectionTitleStyle}>End of Turn</h2>
-          <ul style={listStyle}>
-            <li>Turns end automatically when actions are depleted, or manually via the HUD button (where allowed).</li>
-            <li>Bonuses and effects may apply at the start of the next turn.</li>
-          </ul>
-
-          <h2 style={sectionTitleStyle}>Victory</h2>
-          <p style={paragraphStyle}>
-            You win by controlling all control points or by defeating your opponent through effective use of units, spells, and resources.
-          </p>
         </div>
       </div>
     </div>

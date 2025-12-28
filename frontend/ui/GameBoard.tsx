@@ -1,24 +1,20 @@
 import React from 'react';
 import { Tile } from './Tile';
-import { SpellOverlay } from './SpellOverlay';
 import type { GameState, Position, Unit } from '../src/game/GameState';
-import { getDistance, canDeploy, canCastSpell, canRotate } from '../src/game/rules';
-import { CARDS } from '../src/game/cards';
+import { getDistance, canRotate, canAttack, canDeployUnit } from '../src/game/rules';
 
 interface GameBoardProps {
   gameState: GameState;
   selectedUnitId: string | null;
-  selectedCardId: string | null;
   onSelectUnit: (unit: Unit | null) => void;
   onMove: (unitId: string, target: Position) => void;
   onAttack: (attackerId: string, targetPos: Position) => void;
-  onDeploy: (cardId: string, targetPos: Position) => void;
-  onCastSpell: (cardId: string, targetPos: Position) => void;
   onRotate: (unitId: string, targetPos: Position) => void;
-  activeSpellOverlay: { position: Position; spellType: 'lightning' | 'healing'; ownerId: number } | null;
+  selectedDeployUnitType?: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer' | null;
+  onDeploy?: (unitType: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer', targetPos: Position) => void;
 }
 
-export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId, selectedCardId, onSelectUnit, onMove, onAttack, onDeploy, onCastSpell, onRotate, activeSpellOverlay }) => {
+export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId, onSelectUnit, onMove, onAttack, onRotate, selectedDeployUnitType = null, onDeploy }) => {
   const TILE_SIZE = 100;
   const UNIT_SIZE = TILE_SIZE * 0.8;
   const controlPoints = [
@@ -65,7 +61,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
   const canTakeAction = (): boolean => {
     const selectedUnit = findSelectedUnit();
     if (!selectedUnit) return false;
-    
+
     // Check if unit belongs to current player
     if (selectedUnit.ownerId !== gameState.currentPlayer) return false;
     
@@ -116,36 +112,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
     // Must be enemy unit
     if (tile.unit.ownerId === selectedUnit.ownerId) return false;
 
-    const distance = getDistance(selectedUnit.position, { row, col });
-    return distance <= selectedUnit.stats.attackRange;
-  };
-
-  const isValidDeployTarget = (row: number, col: number): boolean => {
-    if (!selectedCardId) return false;
-    
-    // Only for unit cards
-    const card = CARDS[selectedCardId];
-    if (!card || card.type !== 'unit') return false;
-    
-    // Check if current player has actions remaining
-    const currentPlayerData = gameState.players[gameState.currentPlayer];
-    if (currentPlayerData.actionsRemaining <= 0) return false;
-    
-    return canDeploy(gameState, selectedCardId, { row, col });
-  };
-
-  const isValidSpellTarget = (row: number, col: number): boolean => {
-    if (!selectedCardId) return false;
-    
-    // Only for spell cards
-    const card = CARDS[selectedCardId];
-    if (!card || card.type !== 'spell') return false;
-    
-    // Check if current player has actions remaining
-    const currentPlayerData = gameState.players[gameState.currentPlayer];
-    if (currentPlayerData.actionsRemaining <= 0) return false;
-    
-    return canCastSpell(gameState, selectedCardId, { row, col });
+    // Use rules.canAttack for Archer line-of-sight and ranges
+    return canAttack(gameState, selectedUnit.id, { row, col });
   };
 
   const isValidRotateTarget = (row: number, col: number): boolean => {
@@ -156,31 +124,48 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
     return canRotate(gameState, selectedUnitId, { row, col });
   };
 
+  const isValidDeploymentTile = (row: number, col: number): boolean => {
+    if (!selectedDeployUnitType) return false;
+    try {
+      return canDeployUnit(gameState, selectedDeployUnitType as any, { row, col });
+    } catch {
+      return false;
+    }
+  };
+
   const handleTileClick = (row: number, col: number) => {
-    // Don't allow interactions while spell overlay is active
-    if (activeSpellOverlay !== null) return;
-    
+    // Deployment: place unit if valid
+    if (selectedDeployUnitType && onDeploy) {
+      if (isValidDeploymentTile(row, col)) {
+        onDeploy(selectedDeployUnitType, { row, col });
+        return;
+      }
+
+      // In deploy mode: clicking on a unit while a unit is already selected
+      // should deselect the currently selected unit instead of switching selection.
+      const clicked = gameState.grid[row - 1][col - 1];
+      if (clicked.unit) {
+        if (selectedUnitId) {
+          onSelectUnit(null);
+          return;
+        }
+        // If no unit is currently selected and it's your own unit, select it
+        // (App will reset the picker to None when selecting your own unit).
+        if (clicked.unit.ownerId === gameState.currentPlayer) {
+          onSelectUnit(clicked.unit);
+          return;
+        }
+      }
+    }
+
+    // Simplified interactions: move/attack/rotate only (Action phase)
     const isMoveTarget = isValidMoveDestination(row, col);
     const isAttackTarget = isValidAttackTarget(row, col);
-    const isDeployTarget = isValidDeployTarget(row, col);
-    const isSpellTarget = isValidSpellTarget(row, col);
     const isRotateTarget = isValidRotateTarget(row, col);
     
     // If tile is a rotate target, execute rotate
     if (isRotateTarget && selectedUnitId) {
       onRotate(selectedUnitId, { row, col });
-      return;
-    }
-    
-    // If tile is a spell target, execute spell
-    if (isSpellTarget && selectedCardId) {
-      onCastSpell(selectedCardId, { row, col });
-      return;
-    }
-    
-    // If tile is a deploy target, execute deployment
-    if (isDeployTarget && selectedCardId) {
-      onDeploy(selectedCardId, { row, col });
       return;
     }
     
@@ -227,7 +212,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
               col={col}
               isControlPoint={isControlPoint(row, col)}
               controlPointOwner={getControlPointOwner(row, col)}
-              isHighlighted={isValidMoveDestination(row, col) || isValidDeployTarget(row, col) || isValidSpellTarget(row, col)}
+              isHighlighted={isValidMoveDestination(row, col) || isValidDeploymentTile(row, col)}
               isAttackTarget={isValidAttackTarget(row, col)}
               isRotateTarget={isValidRotateTarget(row, col)}
               unit={getUnitAtPosition(row, col)}
@@ -238,15 +223,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
           ))}
         </div>
       ))}
-      {activeSpellOverlay && (
-        <SpellOverlay
-          position={activeSpellOverlay.position}
-          spellType={activeSpellOverlay.spellType}
-          tileSize={TILE_SIZE}
-          unitSize={UNIT_SIZE}
-          ownerId={activeSpellOverlay.ownerId}
-        />
-      )}
     </div>
   );
 };

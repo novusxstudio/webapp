@@ -77,18 +77,8 @@ export const UnitStatsPanel: React.FC<UnitStatsPanelProps> = ({ unit }) => {
       </div>
 
       <div style={statRowStyle}>
-        <span style={statLabelStyle}>ATK:</span>
-        <span style={statValueStyle}>{unit.stats.atk}</span>
-      </div>
-
-      <div style={statRowStyle}>
-        <span style={statLabelStyle}>DEF:</span>
-        <span style={statValueStyle}>{unit.stats.def}</span>
-      </div>
-
-      <div style={statRowStyle}>
-        <span style={statLabelStyle}>HP:</span>
-        <span style={statValueStyle}>{unit.stats.hp} / {unit.stats.maxHp}</span>
+        <span style={statLabelStyle}>Type:</span>
+        <span style={statValueStyle}>{unit.stats.type}</span>
       </div>
 
       <div style={statRowStyle}>
@@ -99,11 +89,6 @@ export const UnitStatsPanel: React.FC<UnitStatsPanelProps> = ({ unit }) => {
       <div style={statRowStyle}>
         <span style={statLabelStyle}>Attack Range:</span>
         <span style={statValueStyle}>{unit.stats.attackRange}</span>
-      </div>
-
-      <div style={statRowStyle}>
-        <span style={statLabelStyle}>Cost:</span>
-        <span style={statValueStyle}>{unit.stats.cost}</span>
       </div>
     </div>
   );

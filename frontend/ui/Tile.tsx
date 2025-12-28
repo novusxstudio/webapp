@@ -15,7 +15,7 @@ interface TileProps {
   onClick?: () => void;
 }
 
-export const Tile: React.FC<TileProps> = ({ row, col, isControlPoint, controlPointOwner, isHighlighted, isAttackTarget, isRotateTarget, unit, tileSize, unitSize, onClick }) => {
+export const Tile: React.FC<TileProps> = ({ isControlPoint, controlPointOwner, isHighlighted, isAttackTarget, isRotateTarget, unit, tileSize, unitSize, onClick }) => {
   let borderColor = '#333';
   let backgroundColor = '#f0f0f0';
   

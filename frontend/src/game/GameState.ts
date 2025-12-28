@@ -4,13 +4,10 @@ export interface Position {
 }
 
 export interface UnitStats {
-  atk: number;
-  def: number;
-  hp: number;
-  maxHp: number;
+  // Deterministic one-shot system: only movement/attack ranges and type
   moveRange: number;
   attackRange: number;
-  cost: number;
+  type: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer';
 }
 
 export interface Unit {
@@ -27,11 +24,7 @@ export interface Tile {
 
 export interface Player {
   id: number;
-  coins: number;
   actionsRemaining: number;
-  hand: string[];
-  deck: string[];
-  discard: string[];
 }
 
 export interface GameState {
@@ -39,4 +32,6 @@ export interface GameState {
   players: Player[];
   currentPlayer: number;
   turnNumber: number;
+  freeDeploymentsRemaining: number;
+  hasActedThisTurn: boolean;
 }

@@ -1,95 +1,62 @@
 import { useState, useRef, useEffect } from 'react';
 import './App.css'
 import { GameBoard } from '../ui/GameBoard';
+import { UnitPicker } from '../ui/UnitPicker';
 import { UnitStatsPanel } from '../ui/UnitStatsPanel';
-import { Hand } from '../ui/Hand';
 import { HUD } from '../ui/HUD';
 import { BackgroundMusic } from '../ui/BackgroundMusic';
-import { DeckPicker } from '../ui/DeckPicker';
-import { DiscardViewer } from '../ui/DiscardViewer';
 import { RulesModal } from '../ui/RulesModal';
 import type { GameState, Tile, Unit, Player, Position } from './game/GameState';
 import { createInitialGrid } from './game/setup';
-import { applyMove, applyAttack, applyDeploy, applySpell, applyRotate, endTurn, controlsAllPoints, sellCard, createDeck, drawCard, canRecruit, applyRecruit, applyRetrieveFromDiscard, getControlBonuses } from './game/rules';
-import { CARDS } from './game/cards';
-import type { Card } from './game/cards';
+import { applyMove, applyAttack, applyRotate, endTurn, controlsAllPoints, controlsPosition, applyDeployUnit } from './game/rules';
 import bgImage from './assets/background/Gemini_Generated_Image_u709ybu709ybu709.png';
 
 function App() {
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [winner, setWinner] = useState<number | null>(null);
-  const [showDeckPicker, setShowDeckPicker] = useState<boolean>(false);
-  const [isDiscardViewerOpen, setIsDiscardViewerOpen] = useState<boolean>(false);
-  const [activeSpellOverlay, setActiveSpellOverlay] = useState<{ position: Position; spellType: 'lightning' | 'healing'; ownerId: number } | null>(null);
   const [musicEnabled, setMusicEnabled] = useState<boolean>(true);
   const [isRulesOpen, setIsRulesOpen] = useState<boolean>(false);
   
-  const spellTimeoutRef = useRef<number | null>(null);
-
-  // Clear timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (spellTimeoutRef.current !== null) {
-        clearTimeout(spellTimeoutRef.current);
-      }
-    };
-  }, []);
+  // Simplified: no spells/cards
 
   const createInitialGameState = (): GameState => {
     const grid: Tile[][] = createInitialGrid();
 
+    // Initial actions: Player 0 starts with 1 action
     const players: Player[] = [
-      {
-        id: 0,
-        coins: 1,
-        actionsRemaining: 1,
-        hand: [],
-        deck: createDeck(),
-        discard: [],
-      },
-      {
-        id: 1,
-        coins: 0,
-        actionsRemaining: 1,
-        hand: [],
-        deck: createDeck(),
-        discard: [],
-      },
+      { id: 0, actionsRemaining: 1 },
+      { id: 1, actionsRemaining: 0 },
     ];
-
-    // Draw 5 starting cards for each player
-    players.forEach(player => {
-      for (let i = 0; i < 5; i++) {
-        if (player.deck.length > 0) {
-          const [drawnCard, ...remainingDeck] = player.deck;
-          player.hand.push(drawnCard);
-          player.deck = remainingDeck;
-        }
-      }
-    });
 
     return {
       grid,
       players,
       currentPlayer: 0,
       turnNumber: 1,
+      freeDeploymentsRemaining: 0,
+      hasActedThisTurn: false,
     };
   };
+  const [selectedDeployUnitType, setSelectedDeployUnitType] = useState<'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer' | null>(null);
 
   const [gameState, setGameState] = useState<GameState>(createInitialGameState());
 
+  // Reset UnitPicker to None at the beginning of each player's turn
+  useEffect(() => {
+    setSelectedDeployUnitType(null);
+  }, [gameState.currentPlayer, gameState.turnNumber]);
+
   // Manual end-turn handler (does not consume an action)
   const endTurnManually = () => {
-    if (winner !== null || activeSpellOverlay !== null) return;
+    if (winner !== null) return;
     try {
       const newState = endTurn(gameState);
       setGameState(newState);
       // Clear selections
       setSelectedUnitId(null);
       setSelectedUnit(null);
-      setSelectedCardId(null);
+      setSelectedDeployUnitType(null);
     } catch (error) {
       // Ignore errors silently
     }
@@ -108,7 +75,7 @@ function App() {
   };
 
   const handleMove = (unitId: string, target: Position) => {
-    if (winner !== null || activeSpellOverlay !== null) return;
+    if (winner !== null) return;
     
     try {
       // Apply move
@@ -121,15 +88,16 @@ function App() {
           return {
             ...player,
             actionsRemaining: player.actionsRemaining - 1,
-            hand: [...player.hand]
           };
         }
-        return { ...player, hand: [...player.hand] };
+        return { ...player };
       });
       
       newState = {
         ...newState,
-        players: updatedPlayers
+        players: updatedPlayers,
+        hasActedThisTurn: true,
+        freeDeploymentsRemaining: 0,
       };
       
       // Check if turn should end
@@ -147,13 +115,14 @@ function App() {
       
       setGameState(newState);
       setSelectedUnitId(null);
+      setSelectedDeployUnitType(null);
     } catch (error) {
       // Ignore errors silently
     }
   };
 
   const handleAttack = (attackerId: string, targetPos: Position) => {
-    if (winner !== null || activeSpellOverlay !== null) return;
+    if (winner !== null) return;
     
     try {
       // Apply attack
@@ -166,15 +135,16 @@ function App() {
           return {
             ...player,
             actionsRemaining: player.actionsRemaining - 1,
-            hand: [...player.hand]
           };
         }
-        return { ...player, hand: [...player.hand] };
+        return { ...player };
       });
       
       newState = {
         ...newState,
-        players: updatedPlayers
+        players: updatedPlayers,
+        hasActedThisTurn: true,
+        freeDeploymentsRemaining: 0,
       };
       
       // Check if turn should end
@@ -192,153 +162,29 @@ function App() {
       
       setGameState(newState);
       setSelectedUnitId(null);
+      setSelectedDeployUnitType(null);
     } catch (error) {
       // Ignore errors silently
     }
   };
 
   const handleSelectUnit = (unit: Unit | null) => {
-    if (activeSpellOverlay !== null) return;
-    
     if (unit) {
+      // If a deploy type is selected and user selects their own unit,
+      // prefer selecting the unit and reset the picker to None.
+      if (selectedDeployUnitType !== null && unit.ownerId === gameState.currentPlayer) {
+        setSelectedDeployUnitType(null);
+      }
       setSelectedUnitId(unit.id);
       setSelectedUnit(unit);
-      setSelectedCardId(null); // Deselect card when selecting unit
     } else {
       setSelectedUnitId(null);
       setSelectedUnit(null);
     }
   };
 
-  const handleSelectCard = (cardId: string | null) => {
-    if (winner !== null || activeSpellOverlay !== null) return;
-    
-    // If selecting Recruitment card, open deck picker
-    if (cardId === 'recruitment') {
-      const currentPlayer = gameState.players[gameState.currentPlayer];
-      // Check if can recruit
-      if (canRecruit(gameState, cardId) && currentPlayer.actionsRemaining > 0) {
-        setShowDeckPicker(true);
-        setSelectedCardId(cardId);
-        setSelectedUnitId(null);
-        setSelectedUnit(null);
-        return;
-      }
-    }
-    
-    setSelectedCardId(cardId);
-    if (cardId) {
-      // Deselect unit when selecting card
-      setSelectedUnitId(null);
-      setSelectedUnit(null);
-    }
-  };
-
-  const handleDeploy = (cardId: string, targetPos: Position) => {
-    if (winner !== null || activeSpellOverlay !== null) return;
-    
-    try {
-      // Apply deployment
-      let newState = applyDeploy(gameState, cardId, targetPos);
-      
-      // Decrement actions
-      const currentPlayerIndex = newState.currentPlayer;
-      const updatedPlayers = newState.players.map((player, index) => {
-        if (index === currentPlayerIndex) {
-          return {
-            ...player,
-            actionsRemaining: player.actionsRemaining - 1,
-          };
-        }
-        return player;
-      });
-      
-      newState = {
-        ...newState,
-        players: updatedPlayers
-      };
-      
-      // Check if turn should end
-      if (updatedPlayers[currentPlayerIndex].actionsRemaining <= 0) {
-        // Check win condition before ending turn
-        if (controlsAllPoints(newState, currentPlayerIndex)) {
-          setWinner(currentPlayerIndex);
-          setGameState(newState);
-          setSelectedCardId(null);
-          return;
-        }
-        
-        newState = endTurn(newState);
-      }
-      
-      setGameState(newState);
-      setSelectedCardId(null);
-    } catch (error) {
-      // Ignore errors silently
-    }
-  };
-
-  const handleCastSpell = (cardId: string, targetPos: Position) => {
-    if (winner !== null || activeSpellOverlay !== null) return;
-    
-    try {
-      // Apply spell
-      let newState = applySpell(gameState, cardId, targetPos);
-      
-      // Decrement actions
-      const currentPlayerIndex = newState.currentPlayer;
-      const updatedPlayers = newState.players.map((player, index) => {
-        if (index === currentPlayerIndex) {
-          return {
-            ...player,
-            actionsRemaining: player.actionsRemaining - 1,
-          };
-        }
-        return player;
-      });
-      
-      newState = {
-        ...newState,
-        players: updatedPlayers
-      };
-      
-      // Set game state immediately to show spell effect
-      setGameState(newState);
-      setSelectedCardId(null);
-      setSelectedUnit(null);
-      
-      // Determine spell type
-      const spellType: 'lightning' | 'healing' = cardId === 'lightningStrike' ? 'lightning' : 'healing';
-      
-      // Show spell overlay
-      setActiveSpellOverlay({ position: targetPos, spellType, ownerId: gameState.currentPlayer });
-      
-      // Start 1-second timeout
-      spellTimeoutRef.current = window.setTimeout(() => {
-        // Clear overlay
-        setActiveSpellOverlay(null);
-        spellTimeoutRef.current = null;
-        
-        // Check if turn should end
-        if (updatedPlayers[currentPlayerIndex].actionsRemaining <= 0) {
-          // Check win condition before ending turn
-          if (controlsAllPoints(newState, currentPlayerIndex)) {
-            setWinner(currentPlayerIndex);
-            return;
-          }
-          
-          const finalState = endTurn(newState);
-          setGameState(finalState);
-        }
-      }, 1000);
-      
-    } catch (error) {
-      // Ignore errors silently
-    }
-  };
-
   const handleRotate = (unitId: string, targetPos: Position) => {
-    if (winner !== null || activeSpellOverlay !== null) return;
+    if (winner !== null) return;
     
     try {
       // Apply rotate
@@ -358,7 +204,9 @@ function App() {
       
       newState = {
         ...newState,
-        players: updatedPlayers
+        players: updatedPlayers,
+        hasActedThisTurn: true,
+        freeDeploymentsRemaining: 0,
       };
       
       // Check if turn should end
@@ -378,247 +226,56 @@ function App() {
       setGameState(newState);
       setSelectedUnitId(null);
       setSelectedUnit(null);
+      setSelectedDeployUnitType(null);
     } catch (error) {
       // Ignore errors silently
     }
   };
 
-  const handleSellCard = (cardId: string) => {
-    if (winner !== null || activeSpellOverlay !== null) return;
-    
-    // Check if player has actions remaining
-    const currentPlayer = gameState.players[gameState.currentPlayer];
-    if (currentPlayer.actionsRemaining <= 0) return;
-    
+  const handleDeploy = (unitType: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer', targetPos: Position) => {
+    if (winner !== null) return;
     try {
-      // Apply sell
-      let newState = sellCard(gameState, cardId);
-      
-      // Decrement actions
-      const currentPlayerIndex = newState.currentPlayer;
-      const updatedPlayers = newState.players.map((player, index) => {
-        if (index === currentPlayerIndex) {
-          return {
-            ...player,
-            actionsRemaining: player.actionsRemaining - 1,
-          };
-        }
-        return player;
-      });
-      
-      newState = {
-        ...newState,
-        players: updatedPlayers
-      };
-      
-      // Check if turn should end
-      if (updatedPlayers[currentPlayerIndex].actionsRemaining <= 0) {
-        // Check win condition before ending turn
-        if (controlsAllPoints(newState, currentPlayerIndex)) {
-          setWinner(currentPlayerIndex);
-          setGameState(newState);
-          setSelectedCardId(null);
-          return;
-        }
-        
-        newState = endTurn(newState);
-      }
-      
-      setGameState(newState);
-      setSelectedCardId(null);
-    } catch (error) {
-      // Ignore errors silently
-    }
-  };
+      let newState = applyDeployUnit(gameState, unitType as any, targetPos);
 
-  const handleDrawCard = () => {
-    if (winner !== null || activeSpellOverlay !== null) return;
-    
-    // Check if player has actions remaining
-    const currentPlayer = gameState.players[gameState.currentPlayer];
-    if (currentPlayer.actionsRemaining <= 0) return;
-    
-    // Check if player has enough coins
-    if (currentPlayer.coins < 1) return;
-    
-    // Check if deck is empty
-    if (currentPlayer.deck.length === 0) return;
-    
-    try {
-      // Apply draw
-      let newState = drawCard(gameState);
-      
-      // Decrement actions
-      const currentPlayerIndex = newState.currentPlayer;
-      const updatedPlayers = newState.players.map((player, index) => {
-        if (index === currentPlayerIndex) {
-          return {
-            ...player,
-            actionsRemaining: player.actionsRemaining - 1,
-          };
-        }
-        return player;
+      const current = newState.currentPlayer;
+      const freeAvailable = newState.freeDeploymentsRemaining > 0 && !newState.hasActedThisTurn;
+      const updatedPlayers = newState.players.map((p, i) => {
+        if (i !== current) return p;
+        if (freeAvailable) return p; // free deploy, no action spent
+        return { ...p, actionsRemaining: p.actionsRemaining - 1 };
       });
-      
+
       newState = {
         ...newState,
-        players: updatedPlayers
+        players: updatedPlayers,
+        freeDeploymentsRemaining: freeAvailable ? newState.freeDeploymentsRemaining - 1 : 0,
+        hasActedThisTurn: freeAvailable ? newState.hasActedThisTurn : true,
       };
-      
-      // Check if turn should end
-      if (updatedPlayers[currentPlayerIndex].actionsRemaining <= 0) {
-        // Check win condition before ending turn
-        if (controlsAllPoints(newState, currentPlayerIndex)) {
-          setWinner(currentPlayerIndex);
-          setGameState(newState);
-          return;
+
+      // If an action was consumed and actions hit 0, end the turn immediately
+      if (!freeAvailable) {
+        const currentPlayerIndex = newState.currentPlayer;
+        if (newState.players[currentPlayerIndex].actionsRemaining <= 0) {
+          // Check win before ending turn
+          if (controlsAllPoints(newState, currentPlayerIndex)) {
+            setWinner(currentPlayerIndex);
+            setGameState(newState);
+            // Beginning of next turn handled by effect; still clear picker now.
+            setSelectedDeployUnitType(null);
+            return;
+          }
+          newState = endTurn(newState);
         }
-        
-        newState = endTurn(newState);
       }
-      
+
       setGameState(newState);
     } catch (error) {
       // Ignore errors silently
     }
-  };
-
-  const handleRecruitCard = (chosenCardId: string) => {
-    if (winner !== null || activeSpellOverlay !== null) return;
-    if (!selectedCardId) return;
-    
-    try {
-      // Apply recruitment
-      let newState = applyRecruit(gameState, selectedCardId, chosenCardId);
-      
-      // Decrement actions
-      const currentPlayerIndex = newState.currentPlayer;
-      const updatedPlayers = newState.players.map((player, index) => {
-        if (index === currentPlayerIndex) {
-          return {
-            ...player,
-            actionsRemaining: player.actionsRemaining - 1,
-          };
-        }
-        return player;
-      });
-      
-      newState = {
-        ...newState,
-        players: updatedPlayers
-      };
-      
-      // Check if turn should end
-      if (updatedPlayers[currentPlayerIndex].actionsRemaining <= 0) {
-        // Check win condition before ending turn
-        if (controlsAllPoints(newState, currentPlayerIndex)) {
-          setWinner(currentPlayerIndex);
-          setGameState(newState);
-          setShowDeckPicker(false);
-          setSelectedCardId(null);
-          return;
-        }
-        
-        newState = endTurn(newState);
-      }
-      
-      setGameState(newState);
-      setShowDeckPicker(false);
-      setSelectedCardId(null);
-    } catch (error) {
-      // Ignore errors silently
-    }
-  };
-
-  const handleCancelDeckPicker = () => {
-    setShowDeckPicker(false);
-    setSelectedCardId(null);
-  };
-
-  const handleViewDiscard = () => {
-    if (winner !== null || activeSpellOverlay !== null) return;
-    setIsDiscardViewerOpen(true);
-  };
-
-  const handleRetrieveFromDiscard = (cardId: string) => {
-    if (winner !== null || activeSpellOverlay !== null) return;
-    
-    // Check if player has actions remaining
-    const currentPlayer = gameState.players[gameState.currentPlayer];
-    if (currentPlayer.actionsRemaining <= 0) return;
-    
-    try {
-      // Apply retrieval
-      let newState = applyRetrieveFromDiscard(gameState, cardId);
-      
-      // Decrement actions
-      const currentPlayerIndex = newState.currentPlayer;
-      const updatedPlayers = newState.players.map((player, index) => {
-        if (index === currentPlayerIndex) {
-          return {
-            ...player,
-            actionsRemaining: player.actionsRemaining - 1,
-          };
-        }
-        return player;
-      });
-      
-      newState = {
-        ...newState,
-        players: updatedPlayers
-      };
-      
-      // Close discard viewer
-      setIsDiscardViewerOpen(false);
-      
-      // Check if turn should end
-      if (updatedPlayers[currentPlayerIndex].actionsRemaining <= 0) {
-        // Check win condition before ending turn
-        if (controlsAllPoints(newState, currentPlayerIndex)) {
-          setWinner(currentPlayerIndex);
-          setGameState(newState);
-          return;
-        }
-        
-        newState = endTurn(newState);
-      }
-      
-      setGameState(newState);
-      setSelectedCardId(null);
-    } catch (error) {
-      // Ignore errors silently
-    }
-  };
-
-  const handleCloseDiscardViewer = () => {
-    setIsDiscardViewerOpen(false);
-  };
-
-  const getCurrentPlayerHand = (): Card[] => {
-    const currentPlayer = gameState.players[gameState.currentPlayer];
-    return currentPlayer.hand.map(cardId => CARDS[cardId]).filter(card => card !== undefined);
-  };
-
-  const getCurrentPlayerDiscard = (): Card[] => {
-    const currentPlayer = gameState.players[gameState.currentPlayer];
-    return currentPlayer.discard.map(cardId => CARDS[cardId]).filter(card => card !== undefined);
   };
 
   // Compute action mode
   const getActionMode = (): string => {
-    if (activeSpellOverlay !== null) {
-      return 'Spell Cast';
-    }
-    if (selectedCardId) {
-      const card = CARDS[selectedCardId];
-      if (card) {
-        if (card.type === 'unit') {
-          return 'Deploy';
-        } else if (card.type === 'spell') {
-          return 'Spell';
-        }
-      }
-    }
     if (selectedUnitId) {
       return 'Unit Action';
     }
@@ -701,15 +358,10 @@ function App() {
         turnNumber={gameState.turnNumber}
         actionsRemaining={gameState.players[gameState.currentPlayer].actionsRemaining}
         actionMode={getActionMode()}
+        freeDeploymentsRemaining={gameState.freeDeploymentsRemaining}
         winner={winner}
-        coins={gameState.players[gameState.currentPlayer].coins}
-        deckSize={gameState.players[gameState.currentPlayer].deck.length}
-        handSize={gameState.players[gameState.currentPlayer].hand.length}
-        discardSize={gameState.players[gameState.currentPlayer].discard.length}
-        gameState={gameState}
-        onViewDiscard={handleViewDiscard}
         onEndTurn={endTurnManually}
-        isTurnBlocked={activeSpellOverlay !== null || isRulesOpen}
+        isTurnBlocked={isRulesOpen}
         musicEnabled={musicEnabled}
         onToggleMusic={toggleMusic}
         onOpenRules={openRules}
@@ -723,46 +375,29 @@ function App() {
         </div>
       )}
       <div style={contentStyle}>
+        <UnitPicker
+          selected={selectedDeployUnitType}
+          onSelect={(val) => {
+            setSelectedDeployUnitType(val);
+            // When choosing a deploy type (not None), deselect any currently selected board unit
+            if (val !== null) {
+              setSelectedUnitId(null);
+              setSelectedUnit(null);
+            }
+          }}
+        />
         <GameBoard 
           gameState={gameState}
           selectedUnitId={selectedUnitId}
-          selectedCardId={selectedCardId}
           onSelectUnit={handleSelectUnit}
           onMove={handleMove}
           onAttack={handleAttack}
-          onDeploy={handleDeploy}
-          onCastSpell={handleCastSpell}
           onRotate={handleRotate}
-          activeSpellOverlay={activeSpellOverlay}
+          selectedDeployUnitType={selectedDeployUnitType}
+          onDeploy={handleDeploy}
         />
         <UnitStatsPanel unit={selectedUnit} />
       </div>
-      <Hand 
-        cards={getCurrentPlayerHand()}
-        selectedCardId={selectedCardId}
-        onSelectCard={handleSelectCard}
-        onSellCard={handleSellCard}
-        onDrawCard={handleDrawCard}
-        playerCoins={gameState.players[gameState.currentPlayer].coins}
-        deckSize={gameState.players[gameState.currentPlayer].deck.length}
-        actionsRemaining={gameState.players[gameState.currentPlayer].actionsRemaining}
-      />
-      {showDeckPicker && (
-        <DeckPicker
-          deck={gameState.players[gameState.currentPlayer].deck.map(cardId => CARDS[cardId])}
-          onChoose={handleRecruitCard}
-          onCancel={handleCancelDeckPicker}
-        />
-      )}
-      {isDiscardViewerOpen && (
-        <DiscardViewer
-          discard={getCurrentPlayerDiscard()}
-          coins={gameState.players[gameState.currentPlayer].coins}
-          actionsRemaining={gameState.players[gameState.currentPlayer].actionsRemaining}
-          onRetrieve={handleRetrieveFromDiscard}
-          onClose={handleCloseDiscardViewer}
-        />
-      )}
     </div>
   );
 }
