@@ -398,10 +398,10 @@ export function getMatchupsForType(type: Unit['stats']['type']): { beats: Unit['
 
 const BEATS: Record<Unit['stats']['type'], Unit['stats']['type'][]> = {
   Swordsman: ['Swordsman', 'Spearman', 'Cavalry', 'Archer'],
-  Shieldman: ['Archer', 'Cavalry', 'Spearman'],
+  Shieldman: ['Archer', 'Cavalry'],
   Spearman: ['Swordsman', 'Spearman', 'Shieldman', 'Cavalry', 'Archer'],
   Cavalry: ['Cavalry', 'Spearman', 'Archer'],
-  Archer: ['Cavalry', 'Swordsman', 'Spearman', 'Archer'],
+  Archer: ['Cavalry', 'Spearman', 'Archer'],
 };
 
 function isCloseRange(a: Position, b: Position): boolean {
@@ -472,9 +472,9 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
       if (!hasLineOfSight(state, attackerPos, targetPos)) {
         throw new Error('Line of sight is blocked for Archer');
       }
-      // Exception: Shieldman does not die to Archer at range
-      if (dType === 'Shieldman') {
-        // No removals: shield blocks the ranged shot
+      // Exceptions: Shieldman and Swordsman do not die to Archer at range
+      if (dType === 'Shieldman' || dType === 'Swordsman') {
+        // No removals: shield or sword defense blocks the ranged shot
         removeAttacker = false;
         removeDefender = false;
       } else {
@@ -482,21 +482,26 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
         removeDefender = true;
       }
     }
-  } else {
-    // Melee units: deterministic matchup
-    const attackerBeats = BEATS[aType];
-    const defenderBeats = BEATS[dType];
-
-    if (attackerBeats.includes(dType)) {
-      removeDefender = true;
-    } else if (defenderBeats.includes(aType)) {
-      removeAttacker = true;
     } else {
-      // Neither has advantage: both removed
-      removeAttacker = true;
-      removeDefender = true;
+      // Melee units: deterministic matchup
+      const attackerBeats = BEATS[aType];
+      const defenderBeats = BEATS[dType];
+      const attackerWins = attackerBeats.includes(dType);
+      const defenderWins = defenderBeats.includes(aType);
+
+      if (attackerWins && defenderWins) {
+        // Mutual advantage: both removed
+        removeAttacker = true;
+        removeDefender = true;
+      } else if (attackerWins) {
+        removeDefender = true;
+      } else if (defenderWins) {
+        removeAttacker = true;
+      } else {
+        // Neither has advantage: invalid attack (should be blocked by canAttack)
+        throw new Error('Invalid attack: no advantage');
+      }
     }
-  }
 
   // Apply removals immediately
   const newGrid = state.grid.map((row, rowIndex) => {
@@ -545,15 +550,23 @@ export function canAttack(state: GameState, attackerId: string, targetPos: Posit
       // Archers can engage at close range but will lose; allow selection
       return true;
     }
-    // Prevent ranged targeting of Shieldman entirely
-    if (defender.stats.type === 'Shieldman') {
+    // Prevent ranged targeting of Shieldman and Swordsman entirely
+    if (defender.stats.type === 'Shieldman' || defender.stats.type === 'Swordsman') {
       return false;
     }
     // Require line-of-sight for ranged shots
     return hasLineOfSight(state, attackerPos, targetPos);
   }
 
-  // Non-archers: range check sufficient
+  // Non-archers: require that an advantage exists; otherwise attacking is invalid
+  const attackerBeats = BEATS[attacker.stats.type];
+  const defenderBeats = BEATS[defender.stats.type];
+  const attackerWins = attackerBeats.includes(defender.stats.type);
+  const defenderWins = defenderBeats.includes(attacker.stats.type);
+
+  // If neither has advantage, attack is not a valid option
+  if (!attackerWins && !defenderWins) return false;
+  // Otherwise valid (including mutual advantage or attacker/defender advantage)
   return true;
 }
 
