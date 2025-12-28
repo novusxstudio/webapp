@@ -472,8 +472,15 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
       if (!hasLineOfSight(state, attackerPos, targetPos)) {
         throw new Error('Line of sight is blocked for Archer');
       }
-      // Archers instantly kill at range
-      removeDefender = true;
+      // Exception: Shieldman does not die to Archer at range
+      if (dType === 'Shieldman') {
+        // No removals: shield blocks the ranged shot
+        removeAttacker = false;
+        removeDefender = false;
+      } else {
+        // Archers kill at range against other types
+        removeDefender = true;
+      }
     }
   } else {
     // Melee units: deterministic matchup
@@ -537,6 +544,10 @@ export function canAttack(state: GameState, attackerId: string, targetPos: Posit
     if (isCloseRange(attackerPos, targetPos)) {
       // Archers can engage at close range but will lose; allow selection
       return true;
+    }
+    // Prevent ranged targeting of Shieldman entirely
+    if (defender.stats.type === 'Shieldman') {
+      return false;
     }
     // Require line-of-sight for ranged shots
     return hasLineOfSight(state, attackerPos, targetPos);
