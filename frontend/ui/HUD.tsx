@@ -9,13 +9,14 @@ interface HUDProps {
   freeDeploymentsRemaining: number;
   winner: number | null;
   onEndTurn: () => void;
+  onLeaveGame: () => void;
   isTurnBlocked: boolean;
   musicEnabled: boolean;
   onToggleMusic: () => void;
   onOpenRules: () => void;
 }
 
-export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRemaining, actionMode, freeDeploymentsRemaining, winner, onEndTurn, isTurnBlocked, musicEnabled, onToggleMusic, onOpenRules }) => {
+export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRemaining, actionMode, freeDeploymentsRemaining, winner, onEndTurn, onLeaveGame, isTurnBlocked, musicEnabled, onToggleMusic, onOpenRules }) => {
   
   const hudStyle: React.CSSProperties = {
     width: '100%',
@@ -120,6 +121,12 @@ export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRema
           onClick={onToggleMusic}
         >
           {`Music: ${musicEnabled ? 'ON' : 'OFF'}`}
+        </button>
+        <button
+          style={buttonStyle(false)}
+          onClick={onLeaveGame}
+        >
+          Leave Game
         </button>
         <button
           style={buttonStyle(isTurnBlocked || winner !== null)}

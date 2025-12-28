@@ -12,9 +12,10 @@ interface GameBoardProps {
   onRotate: (unitId: string, targetPos: Position) => void;
   selectedDeployUnitType?: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer' | null;
   onDeploy?: (unitType: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer', targetPos: Position) => void;
+  interactionDisabled?: boolean;
 }
 
-export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId, onSelectUnit, onMove, onAttack, onRotate, selectedDeployUnitType = null, onDeploy }) => {
+export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId, onSelectUnit, onMove, onAttack, onRotate, selectedDeployUnitType = null, onDeploy, interactionDisabled = false }) => {
   const TILE_SIZE = 100;
   const UNIT_SIZE = TILE_SIZE * 0.8;
   const controlPoints = [
@@ -134,6 +135,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
   };
 
   const handleTileClick = (row: number, col: number) => {
+    if (interactionDisabled) return;
     // Deployment: place unit if valid
     if (selectedDeployUnitType && onDeploy) {
       if (isValidDeploymentTile(row, col)) {

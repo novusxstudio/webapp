@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import './App.css'
 import { GameBoard } from '../ui/GameBoard';
 import { UnitPicker } from '../ui/UnitPicker';
@@ -7,9 +7,11 @@ import { HUD } from '../ui/HUD';
 import { BackgroundMusic } from '../ui/BackgroundMusic';
 import { RulesModal } from '../ui/RulesModal';
 import type { GameState, Tile, Unit, Player, Position } from './game/GameState';
-import { createInitialGrid } from './game/setup';
-import { applyMove, applyAttack, applyRotate, endTurn, controlsAllPoints, controlsPosition, applyDeployUnit } from './game/rules';
+import { controlsAllPoints } from './game/rules';
 import bgImage from './assets/background/Gemini_Generated_Image_u709ybu709ybu709.png';
+// Socket.IO client via global (injected by Lobby or fallback here)
+declare const io: any;
+type Socket = any;
 
 function App() {
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
@@ -18,52 +20,103 @@ function App() {
   const [musicEnabled, setMusicEnabled] = useState<boolean>(true);
   const [isRulesOpen, setIsRulesOpen] = useState<boolean>(false);
   
-  // Simplified: no spells/cards
-
-  const createInitialGameState = (): GameState => {
-    const grid: Tile[][] = createInitialGrid();
-
-    // Initial actions: Player 0 starts with 1 action
-    const players: Player[] = [
-      { id: 0, actionsRemaining: 1 },
-      { id: 1, actionsRemaining: 0 },
-    ];
-
-    return {
-      grid,
-      players,
-      currentPlayer: 0,
-      turnNumber: 1,
-      freeDeploymentsRemaining: 0,
-      hasActedThisTurn: false,
-    };
-  };
+  // Simplified: no local game mutations; state is authoritative from server
   const [selectedDeployUnitType, setSelectedDeployUnitType] = useState<'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer' | null>(null);
-
-  const [gameState, setGameState] = useState<GameState>(createInitialGameState());
+  const [gameState, setGameState] = useState<GameState | null>(() => {
+    try {
+      const raw = localStorage.getItem('novusx.state');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return null;
+  });
+  const gameId = useMemo(() => localStorage.getItem('novusx.gameId') || '', []);
+  const playerId = useMemo(() => Number(localStorage.getItem('novusx.playerId') ?? '-1'), []);
+  const [socketReady, setSocketReady] = useState(false);
+  useMemo(() => {
+    if (typeof io === 'undefined' && typeof window !== 'undefined') {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.socket.io/4.7.2/socket.io.min.js';
+      s.onload = () => setSocketReady(true);
+      document.head.appendChild(s);
+    } else {
+      setSocketReady(true);
+    }
+    return null as any;
+  }, []);
+  useEffect(() => {
+    if (!gameId) {
+      window.location.hash = '#/lobby';
+      return;
+    }
+    if (!socketReady) return;
+    // Reuse existing connection if present; otherwise create one
+    let conn: Socket = (window as any).__novusx_socket;
+    if (!conn) {
+      conn = (window as any).io('http://localhost:3001');
+      (window as any).__novusx_socket = conn;
+    }
+    const onState = (payload: { gameId: string; state: GameState }) => {
+      if (payload?.gameId === gameId) {
+        setGameState(payload.state);
+        try { localStorage.setItem('novusx.state', JSON.stringify(payload.state)); } catch {}
+      }
+    };
+    const onError = (e: { message: string }) => {
+      // Optionally surface
+      console.warn('Server error:', e?.message);
+    };
+    const onConcluded = (payload: { gameId: string; winner: number }) => {
+      if (payload?.gameId === gameId) {
+        setWinner(payload.winner);
+      }
+    };
+    conn.on('STATE_UPDATE', onState);
+    conn.on('ERROR', onError);
+    conn.on('GAME_CONCLUDED', onConcluded);
+    return () => {
+      conn.off('STATE_UPDATE', onState);
+      conn.off('ERROR', onError);
+      conn.off('GAME_CONCLUDED', onConcluded);
+      // Keep connection alive; App unmount should not disconnect
+    };
+  }, [socketReady, gameId]);
 
   // Reset UnitPicker to None at the beginning of each player's turn
   useEffect(() => {
     setSelectedDeployUnitType(null);
-  }, [gameState.currentPlayer, gameState.turnNumber]);
-
-  // Manual end-turn handler (does not consume an action)
-  const endTurnManually = () => {
-    if (winner !== null) return;
-    try {
-      const newState = endTurn(gameState);
-      setGameState(newState);
-      // Clear selections
+    // Clear selection when it's not my turn
+    if (gameState && playerId !== -1 && gameState.currentPlayer !== playerId) {
       setSelectedUnitId(null);
       setSelectedUnit(null);
-      setSelectedDeployUnitType(null);
-    } catch (error) {
-      // Ignore errors silently
     }
+  }, [gameState?.currentPlayer, gameState?.turnNumber]);
+
+  // Manual end-turn: send intent to server
+  const endTurnManually = () => {
+    if (winner !== null) return;
+    if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
+    const conn: Socket = (window as any).__novusx_socket;
+    conn?.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'END_TURN' } });
+    // Clear UI selections
+    setSelectedUnitId(null);
+    setSelectedUnit(null);
+    setSelectedDeployUnitType(null);
   };
 
   const toggleMusic = () => {
     setMusicEnabled((prev) => !prev);
+  };
+
+  const leaveGame = () => {
+    const conn: Socket = (window as any).__novusx_socket;
+    conn?.emit('LEAVE_GAME', { gameId });
+    // Navigate back to lobby; other player will receive winner update
+    try {
+      localStorage.removeItem('novusx.state');
+      localStorage.removeItem('novusx.gameId');
+      localStorage.removeItem('novusx.playerId');
+    } catch {}
+    window.location.hash = '#/lobby';
   };
 
   const openRules = () => {
@@ -76,99 +129,25 @@ function App() {
 
   const handleMove = (unitId: string, target: Position) => {
     if (winner !== null) return;
-    
-    try {
-      // Apply move
-      let newState = applyMove(gameState, unitId, target);
-      
-      // Decrement actions
-      const currentPlayerIndex = newState.currentPlayer;
-      const updatedPlayers = newState.players.map((player, index) => {
-        if (index === currentPlayerIndex) {
-          return {
-            ...player,
-            actionsRemaining: player.actionsRemaining - 1,
-          };
-        }
-        return { ...player };
-      });
-      
-      newState = {
-        ...newState,
-        players: updatedPlayers,
-        hasActedThisTurn: true,
-        freeDeploymentsRemaining: 0,
-      };
-      
-      // Check if turn should end
-      if (updatedPlayers[currentPlayerIndex].actionsRemaining <= 0) {
-        // Check win condition before ending turn
-        if (controlsAllPoints(newState, currentPlayerIndex)) {
-          setWinner(currentPlayerIndex);
-          setGameState(newState);
-          setSelectedUnitId(null);
-          return;
-        }
-        
-        newState = endTurn(newState);
-      }
-      
-      setGameState(newState);
-      setSelectedUnitId(null);
-      setSelectedDeployUnitType(null);
-    } catch (error) {
-      // Ignore errors silently
-    }
+    if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
+    const conn: Socket = (window as any).__novusx_socket;
+    conn?.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'MOVE', unitId, target } });
+    setSelectedUnitId(null);
+    setSelectedDeployUnitType(null);
   };
 
   const handleAttack = (attackerId: string, targetPos: Position) => {
     if (winner !== null) return;
-    
-    try {
-      // Apply attack
-      let newState = applyAttack(gameState, attackerId, targetPos);
-      
-      // Decrement actions
-      const currentPlayerIndex = newState.currentPlayer;
-      const updatedPlayers = newState.players.map((player, index) => {
-        if (index === currentPlayerIndex) {
-          return {
-            ...player,
-            actionsRemaining: player.actionsRemaining - 1,
-          };
-        }
-        return { ...player };
-      });
-      
-      newState = {
-        ...newState,
-        players: updatedPlayers,
-        hasActedThisTurn: true,
-        freeDeploymentsRemaining: 0,
-      };
-      
-      // Check if turn should end
-      if (updatedPlayers[currentPlayerIndex].actionsRemaining <= 0) {
-        // Check win condition before ending turn
-        if (controlsAllPoints(newState, currentPlayerIndex)) {
-          setWinner(currentPlayerIndex);
-          setGameState(newState);
-          setSelectedUnitId(null);
-          return;
-        }
-        
-        newState = endTurn(newState);
-      }
-      
-      setGameState(newState);
-      setSelectedUnitId(null);
-      setSelectedDeployUnitType(null);
-    } catch (error) {
-      // Ignore errors silently
-    }
+    if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
+    const conn: Socket = (window as any).__novusx_socket;
+    conn?.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'ATTACK', attackerId, targetPos } });
+    setSelectedUnitId(null);
+    setSelectedDeployUnitType(null);
   };
 
   const handleSelectUnit = (unit: Unit | null) => {
+    // Disable selection when it's not my turn
+    if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
     if (unit) {
       // If a deploy type is selected and user selects their own unit,
       // prefer selecting the unit and reset the picker to None.
@@ -185,94 +164,21 @@ function App() {
 
   const handleRotate = (unitId: string, targetPos: Position) => {
     if (winner !== null) return;
-    
-    try {
-      // Apply rotate
-      let newState = applyRotate(gameState, unitId, targetPos);
-      
-      // Decrement actions
-      const currentPlayerIndex = newState.currentPlayer;
-      const updatedPlayers = newState.players.map((player, index) => {
-        if (index === currentPlayerIndex) {
-          return {
-            ...player,
-            actionsRemaining: player.actionsRemaining - 1,
-          };
-        }
-        return player;
-      });
-      
-      newState = {
-        ...newState,
-        players: updatedPlayers,
-        hasActedThisTurn: true,
-        freeDeploymentsRemaining: 0,
-      };
-      
-      // Check if turn should end
-      if (updatedPlayers[currentPlayerIndex].actionsRemaining <= 0) {
-        // Check win condition before ending turn
-        if (controlsAllPoints(newState, currentPlayerIndex)) {
-          setWinner(currentPlayerIndex);
-          setGameState(newState);
-          setSelectedUnitId(null);
-          setSelectedUnit(null);
-          return;
-        }
-        
-        newState = endTurn(newState);
-      }
-      
-      setGameState(newState);
-      setSelectedUnitId(null);
-      setSelectedUnit(null);
-      setSelectedDeployUnitType(null);
-    } catch (error) {
-      // Ignore errors silently
-    }
+    if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
+    const conn: Socket = (window as any).__novusx_socket;
+    conn?.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'ROTATE', unitId, targetPos } });
+    setSelectedUnitId(null);
+    setSelectedUnit(null);
+    setSelectedDeployUnitType(null);
   };
 
   const handleDeploy = (unitType: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer', targetPos: Position) => {
     if (winner !== null) return;
-    try {
-      let newState = applyDeployUnit(gameState, unitType as any, targetPos);
-
-      const current = newState.currentPlayer;
-      const freeAvailable = newState.freeDeploymentsRemaining > 0 && !newState.hasActedThisTurn;
-      const updatedPlayers = newState.players.map((p, i) => {
-        if (i !== current) return p;
-        if (freeAvailable) return p; // free deploy, no action spent
-        return { ...p, actionsRemaining: p.actionsRemaining - 1 };
-      });
-
-      newState = {
-        ...newState,
-        players: updatedPlayers,
-        freeDeploymentsRemaining: freeAvailable ? newState.freeDeploymentsRemaining - 1 : 0,
-        hasActedThisTurn: freeAvailable ? newState.hasActedThisTurn : true,
-      };
-
-      // If an action was consumed and actions hit 0, end the turn immediately
-      if (!freeAvailable) {
-        const currentPlayerIndex = newState.currentPlayer;
-        if (newState.players[currentPlayerIndex].actionsRemaining <= 0) {
-          // Check win before ending turn
-          if (controlsAllPoints(newState, currentPlayerIndex)) {
-            setWinner(currentPlayerIndex);
-            setGameState(newState);
-            // Beginning of next turn handled by effect; still clear picker now.
-            setSelectedDeployUnitType(null);
-            return;
-          }
-          newState = endTurn(newState);
-        }
-      }
-
-      setGameState(newState);
-    } catch (error) {
-      // Ignore errors silently
-    }
+    if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
+    const conn: Socket = (window as any).__novusx_socket;
+    conn?.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'DEPLOY', unitType, targetPos } });
   };
+  const isMyTurn = !!gameState && playerId !== -1 && gameState.currentPlayer === playerId;
 
   // Compute action mode
   const getActionMode = (): string => {
@@ -353,6 +259,7 @@ function App() {
   return (
     <div style={appStyle}>
       <BackgroundMusic enabled={musicEnabled} />
+      {gameState && (
       <HUD 
         currentPlayer={gameState.currentPlayer}
         turnNumber={gameState.turnNumber}
@@ -361,31 +268,35 @@ function App() {
         freeDeploymentsRemaining={gameState.freeDeploymentsRemaining}
         winner={winner}
         onEndTurn={endTurnManually}
+        onLeaveGame={leaveGame}
         isTurnBlocked={isRulesOpen}
         musicEnabled={musicEnabled}
         onToggleMusic={toggleMusic}
         onOpenRules={openRules}
-      />
+      />)}
       {isRulesOpen && (
         <RulesModal onClose={closeRules} />
       )}
-      {winner !== null && (
+      {gameState && winner !== null && (
         <div style={winnerMessageStyle}>
           Player {winner} Wins!
         </div>
       )}
       <div style={contentStyle}>
-        <UnitPicker
-          selected={selectedDeployUnitType}
-          onSelect={(val) => {
-            setSelectedDeployUnitType(val);
-            // When choosing a deploy type (not None), deselect any currently selected board unit
-            if (val !== null) {
-              setSelectedUnitId(null);
-              setSelectedUnit(null);
-            }
-          }}
-        />
+        {isMyTurn && (
+          <UnitPicker
+            selected={selectedDeployUnitType}
+            onSelect={(val) => {
+              setSelectedDeployUnitType(val);
+              // When choosing a deploy type (not None), deselect any currently selected board unit
+              if (val !== null) {
+                setSelectedUnitId(null);
+                setSelectedUnit(null);
+              }
+            }}
+          />
+        )}
+        {gameState && (
         <GameBoard 
           gameState={gameState}
           selectedUnitId={selectedUnitId}
@@ -395,7 +306,8 @@ function App() {
           onRotate={handleRotate}
           selectedDeployUnitType={selectedDeployUnitType}
           onDeploy={handleDeploy}
-        />
+          interactionDisabled={!isMyTurn}
+        />)}
         <UnitStatsPanel unit={selectedUnit} />
       </div>
     </div>
