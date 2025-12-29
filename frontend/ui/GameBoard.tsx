@@ -176,7 +176,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
         }
         // If no unit is currently selected and it's your own unit, select it
         // (App will reset the picker to None when selecting your own unit).
-        if (clicked.unit.ownerId === gameState.currentPlayer) {
+        if (clicked.unit.ownerId === viewerId) {
           onSelectUnit(clicked.unit);
           return;
         }
@@ -209,6 +209,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
     // Otherwise, handle unit selection
     const tile = gameState.grid[actualRow - 1][col - 1];
     if (tile.unit) {
+      // Do not allow selecting enemy units
+      if (tile.unit.ownerId !== viewerId) return;
       if (selectedUnitId === tile.unit.id) {
         onSelectUnit(null);
       } else {

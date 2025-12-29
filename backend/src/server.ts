@@ -98,7 +98,7 @@ io.on('connection', (socket) => {
   // List available bots
   socket.on('LIST_BOTS', () => {
     try {
-      const bots = Object.values(BOT_REGISTRY).map(b => ({ id: b.id, name: b.name }));
+      const bots = Object.keys(BOT_REGISTRY).map((id) => ({ id, name: BOT_REGISTRY[id]().name }));
       socket.emit('AVAILABLE_BOTS', { bots });
     } catch (err: any) {
       socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
@@ -149,9 +149,26 @@ io.on('connection', (socket) => {
         });
       }
 
-      // If it's now a bot's turn, execute bot action immediately
-      game.executeBotTurn();
-      game.broadcastState(io);
+      // If it's now a bot's turn, execute bot actions immediately, then broadcast and handle win/timer
+      if (game.state.players[game.state.currentPlayer]?.isBot) {
+        game.executeBotTurn();
+        game.broadcastState(io);
+        const winner2 = game.checkVictory();
+        if (winner2 !== null) {
+          setTimeout(() => {
+            io.to(game.roomName()).emit('GAME_CONCLUDED', { gameId: game.id, winner: winner2 });
+            manager.endGame(game.id);
+            io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+          }, 0);
+          return;
+        }
+        if (game.hasPlayer(0) && (game.hasPlayer(1) || game.state.players[1]?.isBot)) {
+          game.startInactivityTimer(io, 30, undefined, () => {
+            manager.endGame(game.id);
+            io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+          });
+        }
+      }
     } catch (err: any) {
       socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
     }

@@ -15,6 +15,7 @@ export class GameInstance implements GameInstanceDescriptor {
   disconnectTimers: Map<PlayerId, NodeJS.Timeout> = new Map();
   inactivityTimer: NodeJS.Timeout | null = null;
   state: GameState;
+  private botInstances: Map<PlayerId, import('./bots').Bot> = new Map();
 
   constructor(id?: string) {
     this.id = id ?? GameInstance.generateId();
@@ -130,6 +131,7 @@ export class GameInstance implements GameInstanceDescriptor {
         // Route through strict engine for parity with bots
         const strict: StrictAction = { type: 'MOVE', unitId: action.unitId, to: action.target };
         newState = applyStrictAction(newState, strict);
+        newState = { ...newState, lastAction: { type: 'MOVE', by: fromPlayer, unitId: action.unitId, to: action.target } };
         // decrement actions
         newState = this.decrementActions(newState);
         break;
@@ -140,17 +142,20 @@ export class GameInstance implements GameInstanceDescriptor {
         if (!defender) throw new Error('No defender at target');
         const strict: StrictAction = { type: 'ATTACK', unitId: action.attackerId, targetId: defender.id };
         newState = applyStrictAction(newState, strict);
+        newState = { ...newState, lastAction: { type: 'ATTACK', by: fromPlayer, unitId: action.attackerId, targetId: defender.id } };
         newState = this.decrementActions(newState);
         break;
       }
       case 'ROTATE': {
         newState = applyRotate(newState, action.unitId, action.targetPos);
+        newState = { ...newState, lastAction: { type: 'ROTATE', by: fromPlayer, unitId: action.unitId, to: action.targetPos } };
         newState = this.decrementActions(newState);
         break;
       }
       case 'DEPLOY': {
         // Place unit
         newState = applyDeployUnit(newState, action.unitType as any, action.targetPos);
+        newState = { ...newState, lastAction: { type: 'DEPLOY', by: fromPlayer, unitType: action.unitType as any, to: action.targetPos } };
         // Determine free vs action spend
         const freeAvailable = newState.freeDeploymentsRemaining > 0 && !newState.hasActedThisTurn;
         if (freeAvailable) {
@@ -165,6 +170,7 @@ export class GameInstance implements GameInstanceDescriptor {
       }
       case 'END_TURN': {
         newState = applyStrictAction(newState, { type: 'END_TURN' });
+        newState = { ...newState, lastAction: { type: 'END_TURN', by: fromPlayer } };
         break;
       }
       default:
@@ -184,26 +190,54 @@ export class GameInstance implements GameInstanceDescriptor {
     return !!player?.isBot && !!player?.botId;
   }
 
-  executeBotTurn(): void {
-    if (!this.isCurrentPlayerBot()) return;
-    const playerId = this.state.currentPlayer as PlayerId;
+  private getOrCreateBotInstance(playerId: PlayerId) {
+    const existing = this.botInstances.get(playerId);
+    if (existing) return existing;
     const botId = this.state.players[playerId].botId!;
-    const bot = BOT_REGISTRY[botId];
-    if (!bot) {
-      throw new Error(`Bot not found: ${botId}`);
+    const factory = BOT_REGISTRY[botId];
+    if (!factory) throw new Error(`Bot not found: ${botId}`);
+    const instance = factory();
+    this.botInstances.set(playerId, instance);
+    return instance;
+  }
+
+  executeBotTurn(): void {
+    const MAX_STEPS = 10;
+    let steps = 0;
+    while (this.isCurrentPlayerBot() && steps < MAX_STEPS) {
+      steps++;
+      const playerId = this.state.currentPlayer as PlayerId;
+      const bot = this.getOrCreateBotInstance(playerId);
+      const actions = getAvailableStrictActions(this.state, playerId);
+      const action = bot.decideAction({ gameState: this.state, playerId, availableActions: actions });
+      if (!includesStrictAction(actions, action)) {
+        throw new Error('Bot attempted illegal action');
+      }
+      let newState = applyStrictAction(this.state, action);
+      // Record lastAction for bot decisions
+      switch (action.type) {
+        case 'MOVE':
+          newState = { ...newState, lastAction: { type: 'MOVE', by: playerId, unitId: action.unitId, to: action.to } };
+          break;
+        case 'ATTACK':
+          newState = { ...newState, lastAction: { type: 'ATTACK', by: playerId, unitId: action.unitId, targetId: action.targetId } };
+          break;
+        case 'DEPLOY':
+          newState = { ...newState, lastAction: { type: 'DEPLOY', by: playerId, unitType: action.unitType as any, to: action.to } };
+          break;
+        case 'END_TURN':
+          newState = { ...newState, lastAction: { type: 'END_TURN', by: playerId } };
+          break;
+      }
+      if (action.type === 'MOVE' || action.type === 'ATTACK' || action.type === 'DEPLOY' || action.type === 'ROTATE') {
+        newState = this.decrementActions(newState);
+      }
+      this.state = this.maybeEndTurnOnZero(newState);
+      // Break if turn passed to human
+      if (!this.isCurrentPlayerBot()) break;
+      // If END_TURN was chosen, current player changed; loop condition handles it
+      // Otherwise continue performing bot actions until turn ends or step limit hit
     }
-    const actions = getAvailableStrictActions(this.state, playerId);
-    const action = bot.decideAction({ gameState: this.state, playerId, availableActions: actions });
-    if (!includesStrictAction(actions, action)) {
-      throw new Error('Bot attempted illegal action');
-    }
-    const newState = applyStrictAction(this.state, action);
-    // For MOVE/ATTACK, decrement actions (bots follow same rules)
-    let applied = newState;
-    if (action.type === 'MOVE' || action.type === 'ATTACK') {
-      applied = this.decrementActions(newState);
-    }
-    this.state = this.maybeEndTurnOnZero(applied);
   }
 
   private decrementActions(state: GameState): GameState {

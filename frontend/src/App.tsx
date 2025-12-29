@@ -178,10 +178,9 @@ function App() {
   };
 
   const handleSelectUnit = (unit: Unit | null) => {
-    // Allow selection even when it's not my turn (for viewing stats)
+    // Allow selection even when it's not my turn (for viewing stats), but disallow selecting enemy units
     if (unit) {
-      // If a deploy type is selected and user selects their own unit,
-      // prefer selecting the unit and reset the picker to None.
+      if (unit.ownerId !== playerId) return;
       if (selectedDeployUnitType !== null && gameState && unit.ownerId === gameState.currentPlayer) {
         setSelectedDeployUnitType(null);
       }

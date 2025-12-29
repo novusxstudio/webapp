@@ -35,4 +35,14 @@ export interface GameState {
   turnNumber: number;
   freeDeploymentsRemaining: number;
   hasActedThisTurn: boolean;
+  lastAction?: LastAction;
+}
+
+export interface LastAction {
+  type: 'MOVE' | 'ATTACK' | 'DEPLOY' | 'ROTATE' | 'END_TURN';
+  by: 0 | 1;
+  unitId?: string;
+  targetId?: string;
+  to?: Position;
+  unitType?: UnitStats['type'];
 }

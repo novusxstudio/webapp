@@ -227,7 +227,11 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
   let removeAttacker = false; let removeDefender = false;
   if (aType === 'Archer' && dType === 'Archer') { removeAttacker = true; removeDefender = true; }
   else if (aType === 'Archer') {
-    if (isCloseRange(attackerPos, targetPos)) { removeAttacker = true; }
+    if (isCloseRange(attackerPos, targetPos)) {
+      // Close-range Archer vs Spearman: both removed
+      removeAttacker = true;
+      if (dType === 'Spearman') { removeDefender = true; }
+    }
     else {
       if (!hasLineOfSight(state, attackerPos, targetPos)) throw new Error('Line of sight is blocked for Archer');
       if (dType === 'Shieldman' || dType === 'Swordsman') { removeAttacker = false; removeDefender = false; }

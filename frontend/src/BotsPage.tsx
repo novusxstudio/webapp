@@ -9,6 +9,8 @@ const section: React.CSSProperties = { padding: '12px', background: '#fff', bord
 const title: React.CSSProperties = { fontWeight: 700, fontSize: '16px', marginBottom: '8px' };
 const button: React.CSSProperties = { padding: '8px 12px', borderRadius: '6px', border: '1px solid #2563eb', background: '#dbeafe', color: '#1d4ed8', cursor: 'pointer' };
 const listItem: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f3f4f6' };
+const card: React.CSSProperties = { padding: '16px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.08)' };
+const page: React.CSSProperties = { padding: '20px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '16px', boxShadow: '0 6px 10px rgba(0, 0, 0, 0.08)' };
 
 export const BotsPage: React.FC = () => {
   const [bots, setBots] = useState<BotInfo[]>([]);
@@ -44,19 +46,23 @@ export const BotsPage: React.FC = () => {
 
   return (
     <div style={container}>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <div style={title}>Challenge a Bot</div>
-        <button style={button} onClick={() => window.location.hash = '#/lobby'}>Back to Lobby</button>
-      </div>
-      <div style={section}>
-        {bots.length === 0 && <div style={{ color: '#6b7280' }}>No bots available</div>}
-        {bots.map(b => (
-          <div key={b.id} style={listItem}>
-            <span>{b.name}</span>
-            <button style={button} onClick={() => challengeBot(b.id)}>Challenge</button>
+      <div style={page}>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div style={title}>Challenge a Bot</div>
+          <button style={button} onClick={() => window.location.hash = '#/lobby'}>Back to Lobby</button>
+        </div>
+        <div style={card}>
+          <div style={section}>
+            {bots.length === 0 && <div style={{ color: '#6b7280' }}>No bots available</div>}
+            {bots.map(b => (
+              <div key={b.id} style={listItem}>
+                <span>{b.name}</span>
+                <button style={button} onClick={() => challengeBot(b.id)}>Challenge</button>
+              </div>
+            ))}
+            {error && <div style={{ color: '#ef4444', marginTop: '8px' }}>{error}</div>}
           </div>
-        ))}
-        {error && <div style={{ color: '#ef4444', marginTop: '8px' }}>{error}</div>}
+        </div>
       </div>
     </div>
   );
