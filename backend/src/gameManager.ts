@@ -17,6 +17,22 @@ export class GameManager {
     return { gameId: game.id, playerId: 0, state: game.state, reconnectToken: game.getReconnectToken(0)! };
   }
 
+  createBotGame(socket: Socket, botId: string): CreateGameResponse {
+    const game = new GameInstance();
+    this.games.set(game.id, game);
+
+    // Player 0 is human
+    game.addPlayer(0, socket.id);
+    game.setReconnectToken(0, GameManager.generateToken());
+    socket.join(game.roomName());
+
+    // Player 1 is bot
+    const p1 = game.state.players[1];
+    game.state.players[1] = { ...p1, isBot: true, botId };
+
+    return { gameId: game.id, playerId: 0, state: game.state, reconnectToken: game.getReconnectToken(0)! };
+  }
+
   joinGame(socket: Socket, req: JoinGameRequest): JoinGameResponse {
     const game = this.games.get(req.gameId);
     if (!game) {
@@ -40,10 +56,11 @@ export class GameManager {
   }
 
   listAvailableGames(): string[] {
-    // Joinable: game exists and Player 1 slot is free
+    // Joinable: game exists and Player 1 slot is free (not a bot)
     const ids: string[] = [];
     for (const [id, game] of this.games.entries()) {
-      if (!game.hasPlayer(1)) ids.push(id);
+      const p1IsBot = !!game.state.players[1]?.isBot;
+      if (!game.hasPlayer(1) && !p1IsBot) ids.push(id);
     }
     return ids;
   }

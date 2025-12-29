@@ -24,6 +24,8 @@ export interface Tile {
 export interface Player {
   id: number;
   actionsRemaining: number;
+  isBot?: boolean;
+  botId?: string;
 }
 
 export interface GameState {

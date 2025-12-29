@@ -118,7 +118,10 @@ export const LobbyPage: React.FC = () => {
   return (
     <div style={containerStyle}>
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button style={buttonStyle} onClick={() => setIsRulesOpen(true)}>Rules</button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button style={buttonStyle} onClick={() => window.location.hash = '#/bots'}>Challenge a Bot</button>
+          <button style={buttonStyle} onClick={() => setIsRulesOpen(true)}>Rules</button>
+        </div>
       </div>
       <div style={sectionStyle}>
         <div style={titleStyle}>Create Game</div>

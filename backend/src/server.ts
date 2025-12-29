@@ -1,6 +1,7 @@
 import http from 'http';
 import { Server as IOServer } from 'socket.io';
 import { GameManager } from './gameManager';
+import { BOT_REGISTRY } from './bots';
 import type { PlayerActionRequest, ReconnectRequest } from './types';
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
@@ -38,6 +39,29 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Create bot game
+  socket.on('CREATE_BOT_GAME', (payload: { botId: string }, cb?: (resp: any) => void) => {
+    try {
+      const botId = payload?.botId;
+      if (!botId || !BOT_REGISTRY[botId]) throw new Error('Unknown bot');
+      const resp = manager.createBotGame(socket, botId);
+      if (cb) cb(resp);
+      socket.emit('GAME_CREATED', resp);
+      const game = manager.getGame(resp.gameId)!;
+      game.broadcastState(io);
+      // Start inactivity timer immediately since bot is present
+      game.startInactivityTimer(io, 30, undefined, () => {
+        manager.endGame(game.id);
+        io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+      });
+      // If bot starts (current player is bot), execute bot turn
+      game.executeBotTurn();
+      game.broadcastState(io);
+    } catch (err: any) {
+      socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
+    }
+  });
+
   // Join game
   socket.on('JOIN_GAME', (payload: { gameId: string }, cb?: (resp: any) => void) => {
     try {
@@ -66,6 +90,16 @@ io.on('connection', (socket) => {
     try {
       const games = manager.listAvailableGames();
       socket.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games });
+    } catch (err: any) {
+      socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
+    }
+  });
+
+  // List available bots
+  socket.on('LIST_BOTS', () => {
+    try {
+      const bots = Object.values(BOT_REGISTRY).map(b => ({ id: b.id, name: b.name }));
+      socket.emit('AVAILABLE_BOTS', { bots });
     } catch (err: any) {
       socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
     }
@@ -108,12 +142,16 @@ io.on('connection', (socket) => {
       }
 
       // Reset/start inactivity timer only if both players are present (30s)
-      if (game.hasPlayer(0) && game.hasPlayer(1)) {
+      if (game.hasPlayer(0) && (game.hasPlayer(1) || game.state.players[1]?.isBot)) {
         game.startInactivityTimer(io, 30, undefined, () => {
           manager.endGame(game.id);
           io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
         });
       }
+
+      // If it's now a bot's turn, execute bot action immediately
+      game.executeBotTurn();
+      game.broadcastState(io);
     } catch (err: any) {
       socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
     }

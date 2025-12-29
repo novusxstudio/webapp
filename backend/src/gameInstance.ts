@@ -4,6 +4,8 @@ import type { PlayerId, PlayerAction, GameInstanceDescriptor } from './types';
 import type { GameState, Position } from './logic/GameState';
 import { createInitialGrid } from './logic/setup';
 import { applyMove, applyAttack, applyRotate, applyDeployUnit, endTurn, controlsAllPoints } from './logic/rules';
+import { getAvailableActions as getAvailableStrictActions, applyAction as applyStrictAction, includesAction as includesStrictAction, type Action as StrictAction } from './engine/actions';
+import { BOT_REGISTRY } from './bots';
 
 // Authoritative game instance: owns state and applies actions using existing game logic
 export class GameInstance implements GameInstanceDescriptor {
@@ -125,13 +127,19 @@ export class GameInstance implements GameInstanceDescriptor {
 
     switch (action.kind) {
       case 'MOVE': {
-        newState = applyMove(newState, action.unitId, action.target);
+        // Route through strict engine for parity with bots
+        const strict: StrictAction = { type: 'MOVE', unitId: action.unitId, to: action.target };
+        newState = applyStrictAction(newState, strict);
         // decrement actions
         newState = this.decrementActions(newState);
         break;
       }
       case 'ATTACK': {
-        newState = applyAttack(newState, action.attackerId, action.targetPos);
+        // Convert to strict action by resolving defender at position
+        const defender = newState.grid[action.targetPos.row - 1][action.targetPos.col - 1].unit;
+        if (!defender) throw new Error('No defender at target');
+        const strict: StrictAction = { type: 'ATTACK', unitId: action.attackerId, targetId: defender.id };
+        newState = applyStrictAction(newState, strict);
         newState = this.decrementActions(newState);
         break;
       }
@@ -156,7 +164,7 @@ export class GameInstance implements GameInstanceDescriptor {
         break;
       }
       case 'END_TURN': {
-        newState = endTurn(newState);
+        newState = applyStrictAction(newState, { type: 'END_TURN' });
         break;
       }
       default:
@@ -168,6 +176,34 @@ export class GameInstance implements GameInstanceDescriptor {
 
     this.state = newState;
     return this.state;
+  }
+
+  isCurrentPlayerBot(): boolean {
+    const current = this.state.currentPlayer as PlayerId;
+    const player = this.state.players[current];
+    return !!player?.isBot && !!player?.botId;
+  }
+
+  executeBotTurn(): void {
+    if (!this.isCurrentPlayerBot()) return;
+    const playerId = this.state.currentPlayer as PlayerId;
+    const botId = this.state.players[playerId].botId!;
+    const bot = BOT_REGISTRY[botId];
+    if (!bot) {
+      throw new Error(`Bot not found: ${botId}`);
+    }
+    const actions = getAvailableStrictActions(this.state, playerId);
+    const action = bot.decideAction({ gameState: this.state, playerId, availableActions: actions });
+    if (!includesStrictAction(actions, action)) {
+      throw new Error('Bot attempted illegal action');
+    }
+    const newState = applyStrictAction(this.state, action);
+    // For MOVE/ATTACK, decrement actions (bots follow same rules)
+    let applied = newState;
+    if (action.type === 'MOVE' || action.type === 'ATTACK') {
+      applied = this.decrementActions(newState);
+    }
+    this.state = this.maybeEndTurnOnZero(applied);
   }
 
   private decrementActions(state: GameState): GameState {
