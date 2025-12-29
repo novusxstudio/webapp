@@ -1,7 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-// Use CDN-loaded Socket.IO client to avoid bundler type resolution issues
-declare const io: any;
-type Socket = any;
+import React, { useEffect, useState } from 'react';
+import { socket } from './socket';
+import { RulesModal } from '../ui/RulesModal';
 
 interface AvailableGamesMessage {
   type: 'AVAILABLE_GAMES';
@@ -12,12 +11,14 @@ interface CreateGameResponse {
   gameId: string;
   playerId: 0 | 1;
   state?: any;
+  reconnectToken: string;
 }
 
 interface JoinGameResponse {
   gameId: string;
   playerId: 0 | 1;
   state?: any;
+  reconnectToken: string;
 }
 
 const sectionStyle: React.CSSProperties = {
@@ -48,45 +49,27 @@ export const LobbyPage: React.FC = () => {
   const [joinId, setJoinId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [games, setGames] = useState<string[]>([]);
+  const [isRulesOpen, setIsRulesOpen] = useState<boolean>(false);
 
-  const [socketReady, setSocketReady] = useState(false);
-  useMemo(() => {
-    // Ensure the client library is present; if not, inject it
-    if (typeof io === 'undefined' && typeof window !== 'undefined') {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.socket.io/4.7.2/socket.io.min.js';
-      s.onload = () => setSocketReady(true);
-      document.head.appendChild(s);
-    } else {
-      setSocketReady(true);
-    }
-    // Create connection when ready
-    // Note: we return a placeholder; real connection established in effect
-    return null as any;
-  }, []);
+  // No script injection or per-page socket; use shared socket instance.
 
   useEffect(() => {
-    if (!socketReady) return;
-    const conn: Socket = (window as any).io('http://localhost:3001');
     const onError = (payload: { message: string }) => setError(payload?.message ?? 'Unknown error');
     const onAvailable = (msg: AvailableGamesMessage) => {
       if (msg && msg.type === 'AVAILABLE_GAMES') setGames(msg.games || []);
     };
-    conn.on('ERROR', onError);
-    conn.on('AVAILABLE_GAMES', onAvailable);
+    socket.on('ERROR', onError);
+    socket.on('AVAILABLE_GAMES', onAvailable);
 
     // Request list on load
-    conn.emit('LIST_GAMES');
-
-    // Save connection for handlers
-    (window as any).__novusx_socket = conn;
+    socket.emit('LIST_GAMES');
 
     return () => {
-      conn.off('ERROR', onError);
-      conn.off('AVAILABLE_GAMES', onAvailable);
-      // Keep connection alive across navigation; do not disconnect here.
+      socket.off('ERROR', onError);
+      socket.off('AVAILABLE_GAMES', onAvailable);
+      // Keep socket alive across navigation
     };
-  }, [socketReady]);
+  }, []);
 
   const navigateToGame = (resp: { gameId: string; playerId: 0 | 1; state?: any }) => {
     // Persist for later use; existing App does not read these yet
@@ -95,23 +78,38 @@ export const LobbyPage: React.FC = () => {
     if (resp.state) {
       try { localStorage.setItem('novusx.state', JSON.stringify(resp.state)); } catch {}
     }
+    // Store reconnect token
+    if ((resp as any).reconnectToken) {
+      localStorage.setItem('novusx.reconnectToken', (resp as any).reconnectToken);
+    }
     // Navigate to game board route (hash-based)
     window.location.hash = '#/game';
   };
 
+  const navigateToWaiting = (resp: { gameId: string; playerId: 0 | 1; state?: any }) => {
+    // Persist creator's seat and token
+    localStorage.setItem('novusx.gameId', resp.gameId);
+    localStorage.setItem('novusx.playerId', String(resp.playerId));
+    if ((resp as any).reconnectToken) {
+      localStorage.setItem('novusx.reconnectToken', (resp as any).reconnectToken);
+    }
+    if (resp.state) {
+      try { localStorage.setItem('novusx.state', JSON.stringify(resp.state)); } catch {}
+    }
+    window.location.hash = '#/waiting';
+  };
+
   const handleCreate = () => {
     setError(null);
-    const conn: Socket = (window as any).__novusx_socket;
-    conn?.emit('CREATE_GAME', null, (resp: CreateGameResponse) => {
+    socket.emit('CREATE_GAME', null, (resp: CreateGameResponse) => {
       if (!resp || !resp.gameId) { setError('Failed to create game'); return; }
-      navigateToGame(resp);
+      navigateToWaiting(resp);
     });
   };
 
   const handleJoin = (id: string) => {
     setError(null);
-    const conn: Socket = (window as any).__novusx_socket;
-    conn?.emit('JOIN_GAME', { gameId: id }, (resp: JoinGameResponse) => {
+    socket.emit('JOIN_GAME', { gameId: id }, (resp: JoinGameResponse) => {
       if (!resp || !resp.gameId) { setError('Failed to join game'); return; }
       navigateToGame(resp);
     });
@@ -119,6 +117,9 @@ export const LobbyPage: React.FC = () => {
 
   return (
     <div style={containerStyle}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button style={buttonStyle} onClick={() => setIsRulesOpen(true)}>Rules</button>
+      </div>
       <div style={sectionStyle}>
         <div style={titleStyle}>Create Game</div>
         <button style={buttonStyle} onClick={handleCreate}>Create New Game</button>
@@ -138,11 +139,12 @@ export const LobbyPage: React.FC = () => {
         {games.length === 0 && <div style={{ color: '#6b7280' }}>No available games</div>}
         {games.map((g) => (
           <div key={g} style={listItemStyle}>
-            <span>{g}</span>
+            <span><strong>Game ID:</strong> {g}</span>
             <button style={buttonStyle} onClick={() => handleJoin(g)}>Join</button>
           </div>
         ))}
       </div>
+      {isRulesOpen && <RulesModal onClose={() => setIsRulesOpen(false)} />}
     </div>
   );
 };

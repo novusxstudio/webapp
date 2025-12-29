@@ -13,9 +13,10 @@ interface GameBoardProps {
   selectedDeployUnitType?: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer' | null;
   onDeploy?: (unitType: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer', targetPos: Position) => void;
   interactionDisabled?: boolean;
+  viewerId?: number;
 }
 
-export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId, onSelectUnit, onMove, onAttack, onRotate, selectedDeployUnitType = null, onDeploy, interactionDisabled = false }) => {
+export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId, onSelectUnit, onMove, onAttack, onRotate, selectedDeployUnitType = null, onDeploy, interactionDisabled = false, viewerId = 0 }) => {
   const TILE_SIZE = 100;
   const UNIT_SIZE = TILE_SIZE * 0.8;
   const controlPoints = [
@@ -24,12 +25,17 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
     { row: 3, col: 5 },
   ];
 
+  // Map displayed row to actual game state's row depending on viewer perspective.
+  // Player 0 sees rows as-is; Player 1 sees row 1 as 5, 2 as 4, ..., 5 as 1.
+  const toActualRow = (displayRow: number): number => (viewerId === 0 ? (6 - displayRow) : displayRow);
+
   const isControlPoint = (row: number, col: number): boolean => {
     return controlPoints.some(cp => cp.row === row && cp.col === col);
   };
 
   const getUnitAtPosition = (row: number, col: number) => {
-    const tile = gameState.grid[row - 1][col - 1];
+    const actualRow = toActualRow(row);
+    const tile = gameState.grid[actualRow - 1][col - 1];
     if (tile.unit) {
       return {
         id: tile.unit.id,
@@ -79,20 +85,21 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
     
     if (!canTakeAction()) return false;
 
-    const tile = gameState.grid[row - 1][col - 1];
+    const actualRow = toActualRow(row);
+    const tile = gameState.grid[actualRow - 1][col - 1];
     if (tile.unit !== null) return false;
 
-    const distance = getDistance(selectedUnit.position, { row, col });
+    const distance = getDistance(selectedUnit.position, { row: actualRow, col });
     if (distance > selectedUnit.stats.moveRange) return false;
 
     // Check for blocked path (orthogonal moves with distance > 1)
     const dx = Math.abs(col - selectedUnit.position.col);
-    const dy = Math.abs(row - selectedUnit.position.row);
+    const dy = Math.abs(actualRow - selectedUnit.position.row);
     const isDiagonal = dx === 1 && dy === 1;
     
     if (!isDiagonal && distance > 1) {
       // For orthogonal moves with distance > 1, check intermediate tile
-      const midRow = Math.floor((selectedUnit.position.row + row) / 2);
+      const midRow = Math.floor((selectedUnit.position.row + actualRow) / 2);
       const midCol = Math.floor((selectedUnit.position.col + col) / 2);
       const intermediateTile = gameState.grid[midRow - 1][midCol - 1];
       if (intermediateTile.unit !== null) return false;
@@ -107,45 +114,61 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
 
     if (!canTakeAction()) return false;
 
-    const tile = gameState.grid[row - 1][col - 1];
+    const actualRow = toActualRow(row);
+    const tile = gameState.grid[actualRow - 1][col - 1];
     if (tile.unit === null) return false;
 
     // Must be enemy unit
     if (tile.unit.ownerId === selectedUnit.ownerId) return false;
 
     // Use rules.canAttack for Archer line-of-sight and ranges
-    return canAttack(gameState, selectedUnit.id, { row, col });
+    return canAttack(gameState, selectedUnit.id, { row: actualRow, col });
   };
 
   const isValidRotateTarget = (row: number, col: number): boolean => {
     if (!selectedUnitId) return false;
     
     if (!canTakeAction()) return false;
-    
-    return canRotate(gameState, selectedUnitId, { row, col });
+    const actualRow = toActualRow(row);
+    return canRotate(gameState, selectedUnitId, { row: actualRow, col });
   };
 
   const isValidDeploymentTile = (row: number, col: number): boolean => {
     if (!selectedDeployUnitType) return false;
     try {
-      return canDeployUnit(gameState, selectedDeployUnitType as any, { row, col });
+      const actualRow = toActualRow(row);
+      return canDeployUnit(gameState, selectedDeployUnitType as any, { row: actualRow, col });
     } catch {
       return false;
     }
   };
 
   const handleTileClick = (row: number, col: number) => {
-    if (interactionDisabled) return;
-    // Deployment: place unit if valid
+    const actualRow = toActualRow(row);
+
+    // If interactions are disabled (opponent's turn), allow selection only.
+    if (interactionDisabled) {
+      const tile = gameState.grid[actualRow - 1][col - 1];
+      if (tile.unit) {
+        if (selectedUnitId === tile.unit.id) {
+          onSelectUnit(null);
+        } else {
+          onSelectUnit(tile.unit);
+        }
+      }
+      return;
+    }
+
+    // Deployment: place unit if valid (only on your turn)
     if (selectedDeployUnitType && onDeploy) {
       if (isValidDeploymentTile(row, col)) {
-        onDeploy(selectedDeployUnitType, { row, col });
+        onDeploy(selectedDeployUnitType, { row: actualRow, col });
         return;
       }
 
       // In deploy mode: clicking on a unit while a unit is already selected
       // should deselect the currently selected unit instead of switching selection.
-      const clicked = gameState.grid[row - 1][col - 1];
+      const clicked = gameState.grid[actualRow - 1][col - 1];
       if (clicked.unit) {
         if (selectedUnitId) {
           onSelectUnit(null);
@@ -167,24 +190,24 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
     
     // If tile is a rotate target, execute rotate
     if (isRotateTarget && selectedUnitId) {
-      onRotate(selectedUnitId, { row, col });
+      onRotate(selectedUnitId, { row: actualRow, col });
       return;
     }
     
     // If tile is an attack target, execute attack
     if (isAttackTarget && selectedUnitId && canTakeAction()) {
-      onAttack(selectedUnitId, { row, col });
+      onAttack(selectedUnitId, { row: actualRow, col });
       return;
     }
     
     // If tile is a move target, execute move
     if (isMoveTarget && selectedUnitId && canTakeAction()) {
-      onMove(selectedUnitId, { row, col });
+      onMove(selectedUnitId, { row: actualRow, col });
       return;
     }
     
     // Otherwise, handle unit selection
-    const tile = gameState.grid[row - 1][col - 1];
+    const tile = gameState.grid[actualRow - 1][col - 1];
     if (tile.unit) {
       if (selectedUnitId === tile.unit.id) {
         onSelectUnit(null);

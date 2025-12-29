@@ -23,8 +23,6 @@ export default defineConfig([
     extends: [
       // Other configs...
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
       // Alternatively, use this for stricter rules
       tseslint.configs.strictTypeChecked,
       // Optionally, add this for stylistic rules
@@ -62,6 +60,26 @@ export default defineConfig([
       reactDom.configs.recommended,
     ],
     languageOptions: {
+  ## LAN Development (Local Network Access)
+
+  To access the frontend dev server from other devices on your LAN:
+
+  - Vite server binding is configured in `vite.config.ts` (`server.host = true`, `port = 5173`).
+  - Set the backend server URL via environment variable:
+
+  Create a `.env` file in this folder with:
+
+  ```
+  VITE_SERVER_URL=http://<your-lan-ip>:3001
+  ```
+
+  Then start the dev server:
+
+  ```
+  npm run dev
+  ```
+
+  From another device on the same network, open `http://<your-lan-ip>:5173`.
       parserOptions: {
         project: ['./tsconfig.node.json', './tsconfig.app.json'],
         tsconfigRootDir: import.meta.dirname,

@@ -8,6 +8,9 @@ interface HUDProps {
   actionMode: string;
   freeDeploymentsRemaining: number;
   winner: number | null;
+  gameId: string;
+  inactivityRemaining?: number | null;
+  disconnectGraceRemaining?: number | null;
   onEndTurn: () => void;
   onLeaveGame: () => void;
   isTurnBlocked: boolean;
@@ -16,7 +19,7 @@ interface HUDProps {
   onOpenRules: () => void;
 }
 
-export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRemaining, actionMode, freeDeploymentsRemaining, winner, onEndTurn, onLeaveGame, isTurnBlocked, musicEnabled, onToggleMusic, onOpenRules }) => {
+export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRemaining, actionMode, freeDeploymentsRemaining, winner, gameId, inactivityRemaining, disconnectGraceRemaining, onEndTurn, onLeaveGame, isTurnBlocked, musicEnabled, onToggleMusic, onOpenRules }) => {
   
   const hudStyle: React.CSSProperties = {
     width: '100%',
@@ -100,6 +103,11 @@ export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRema
         </div>
 
         <div style={itemStyle}>
+          <span style={labelStyle}>Game ID</span>
+          <span style={valueStyle}>{gameId}</span>
+        </div>
+
+        <div style={itemStyle}>
           <span style={labelStyle}>Actions Remaining</span>
           <span style={valueStyle}>{actionsRemaining}</span>
         </div>
@@ -107,6 +115,22 @@ export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRema
           <span style={labelStyle}>Deployments</span>
           <span style={valueStyle}>{freeDeploymentsRemaining}</span>
         </div>
+        {typeof inactivityRemaining === 'number' && (
+          <div style={itemStyle}>
+            <span style={labelStyle}>Inactivity Countdown</span>
+            <span style={valueStyle}>
+              {`Turn auto-ends in: ${String(Math.floor(inactivityRemaining / 60)).padStart(2, '0')}:${String(inactivityRemaining % 60).padStart(2, '0')}`}
+            </span>
+          </div>
+        )}
+        {typeof disconnectGraceRemaining === 'number' && (
+          <div style={itemStyle}>
+            <span style={labelStyle}>Opponent Disconnect</span>
+            <span style={valueStyle}>
+              {`Auto-win in: ${String(Math.floor(disconnectGraceRemaining / 60)).padStart(2, '0')}:${String(disconnectGraceRemaining % 60).padStart(2, '0')}`}
+            </span>
+          </div>
+        )}
       </div>
 
       <div style={rightSectionStyle}>

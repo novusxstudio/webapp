@@ -9,14 +9,15 @@ import { RulesModal } from '../ui/RulesModal';
 import type { GameState, Tile, Unit, Player, Position } from './game/GameState';
 import { controlsAllPoints } from './game/rules';
 import bgImage from './assets/background/Gemini_Generated_Image_u709ybu709ybu709.png';
-// Socket.IO client via global (injected by Lobby or fallback here)
-declare const io: any;
-type Socket = any;
+import { socket } from './socket';
 
 function App() {
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   const [winner, setWinner] = useState<number | null>(null);
+  const [inactivityInfo, setInactivityInfo] = useState<{ seconds: number; deadline: number; currentPlayer: number } | null>(null);
+  const [disconnectGrace, setDisconnectGrace] = useState<{ seconds: number; deadline: number } | null>(null);
+  const [nowTick, setNowTick] = useState<number>(Date.now());
   const [musicEnabled, setMusicEnabled] = useState<boolean>(true);
   const [isRulesOpen, setIsRulesOpen] = useState<boolean>(false);
   
@@ -31,29 +32,11 @@ function App() {
   });
   const gameId = useMemo(() => localStorage.getItem('novusx.gameId') || '', []);
   const playerId = useMemo(() => Number(localStorage.getItem('novusx.playerId') ?? '-1'), []);
-  const [socketReady, setSocketReady] = useState(false);
-  useMemo(() => {
-    if (typeof io === 'undefined' && typeof window !== 'undefined') {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.socket.io/4.7.2/socket.io.min.js';
-      s.onload = () => setSocketReady(true);
-      document.head.appendChild(s);
-    } else {
-      setSocketReady(true);
-    }
-    return null as any;
-  }, []);
+  const reconnectToken = useMemo(() => localStorage.getItem('novusx.reconnectToken') || '', []);
   useEffect(() => {
     if (!gameId) {
       window.location.hash = '#/lobby';
       return;
-    }
-    if (!socketReady) return;
-    // Reuse existing connection if present; otherwise create one
-    let conn: Socket = (window as any).__novusx_socket;
-    if (!conn) {
-      conn = (window as any).io('http://localhost:3001');
-      (window as any).__novusx_socket = conn;
     }
     const onState = (payload: { gameId: string; state: GameState }) => {
       if (payload?.gameId === gameId) {
@@ -68,35 +51,87 @@ function App() {
     const onConcluded = (payload: { gameId: string; winner: number }) => {
       if (payload?.gameId === gameId) {
         setWinner(payload.winner);
+        // Clear any active timers on game end
+        setInactivityInfo(null);
+        setDisconnectGrace(null);
       }
     };
-    conn.on('STATE_UPDATE', onState);
-    conn.on('ERROR', onError);
-    conn.on('GAME_CONCLUDED', onConcluded);
+    const onOpponentDisc = (payload: { gameId: string; graceSeconds: number }) => {
+      if (payload?.gameId === gameId) {
+        console.warn('Opponent disconnected. Grace seconds:', payload.graceSeconds);
+        setDisconnectGrace({ seconds: payload.graceSeconds, deadline: Date.now() + payload.graceSeconds * 1000 });
+      }
+    };
+    const onForfeit = (payload: { gameId: string; reason: string }) => {
+      if (payload?.gameId === gameId) {
+        console.warn('Opponent forfeited:', payload.reason);
+      }
+    };
+    socket.on('STATE_UPDATE', onState);
+    socket.on('ERROR', onError);
+    socket.on('GAME_CONCLUDED', onConcluded);
+    socket.on('OPPONENT_DISCONNECTED', onOpponentDisc);
+    socket.on('PLAYER_FORFEIT', onForfeit);
+    socket.on('RESUME_GAME', (payload: { gameId: string; state: GameState }) => {
+      if (payload?.gameId === gameId) {
+        setGameState(payload.state);
+        try { localStorage.setItem('novusx.state', JSON.stringify(payload.state)); } catch {}
+        // Clear grace countdown on resume (opponent reconnected)
+        setDisconnectGrace(null);
+      }
+    });
+    socket.on('INACTIVITY_TIMER_START', (payload: { gameId: string; seconds: number; deadline: number; currentPlayer: number }) => {
+      if (payload?.gameId === gameId) {
+        setInactivityInfo({ seconds: payload.seconds, deadline: payload.deadline, currentPlayer: payload.currentPlayer });
+      }
+    });
+    socket.on('INACTIVITY_TIMER_CANCEL', (payload: { gameId: string }) => {
+      if (payload?.gameId === gameId) {
+        setInactivityInfo(null);
+      }
+    });
+    socket.on('DISCONNECT_GRACE_CANCEL', (payload: { gameId: string }) => {
+      if (payload?.gameId === gameId) {
+        setDisconnectGrace(null);
+      }
+    });
     return () => {
-      conn.off('STATE_UPDATE', onState);
-      conn.off('ERROR', onError);
-      conn.off('GAME_CONCLUDED', onConcluded);
+      socket.off('STATE_UPDATE', onState);
+      socket.off('ERROR', onError);
+      socket.off('GAME_CONCLUDED', onConcluded);
+      socket.off('OPPONENT_DISCONNECTED', onOpponentDisc);
+      socket.off('PLAYER_FORFEIT', onForfeit);
+      socket.off('INACTIVITY_TIMER_START');
+      socket.off('INACTIVITY_TIMER_CANCEL');
+      socket.off('DISCONNECT_GRACE_CANCEL');
+      socket.off('RESUME_GAME');
       // Keep connection alive; App unmount should not disconnect
     };
-  }, [socketReady, gameId]);
+  }, [gameId]);
+
+  // Attempt auto-reconnect on app load if reconnect data exists
+  useEffect(() => {
+    if (gameId && (playerId === 0 || playerId === 1) && reconnectToken) {
+      socket.emit('RECONNECT', { type: 'RECONNECT', gameId, playerId, reconnectToken });
+    }
+  }, [gameId, playerId, reconnectToken]);
+
+  // Update tick for local countdown display
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 500);
+    return () => clearInterval(id);
+  }, []);
 
   // Reset UnitPicker to None at the beginning of each player's turn
   useEffect(() => {
     setSelectedDeployUnitType(null);
-    // Clear selection when it's not my turn
-    if (gameState && playerId !== -1 && gameState.currentPlayer !== playerId) {
-      setSelectedUnitId(null);
-      setSelectedUnit(null);
-    }
   }, [gameState?.currentPlayer, gameState?.turnNumber]);
 
   // Manual end-turn: send intent to server
   const endTurnManually = () => {
     if (winner !== null) return;
     if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
-    const conn: Socket = (window as any).__novusx_socket;
-    conn?.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'END_TURN' } });
+    socket.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'END_TURN' } });
     // Clear UI selections
     setSelectedUnitId(null);
     setSelectedUnit(null);
@@ -108,8 +143,7 @@ function App() {
   };
 
   const leaveGame = () => {
-    const conn: Socket = (window as any).__novusx_socket;
-    conn?.emit('LEAVE_GAME', { gameId });
+    socket.emit('LEAVE_GAME', { gameId });
     // Navigate back to lobby; other player will receive winner update
     try {
       localStorage.removeItem('novusx.state');
@@ -130,8 +164,7 @@ function App() {
   const handleMove = (unitId: string, target: Position) => {
     if (winner !== null) return;
     if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
-    const conn: Socket = (window as any).__novusx_socket;
-    conn?.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'MOVE', unitId, target } });
+    socket.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'MOVE', unitId, target } });
     setSelectedUnitId(null);
     setSelectedDeployUnitType(null);
   };
@@ -139,19 +172,17 @@ function App() {
   const handleAttack = (attackerId: string, targetPos: Position) => {
     if (winner !== null) return;
     if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
-    const conn: Socket = (window as any).__novusx_socket;
-    conn?.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'ATTACK', attackerId, targetPos } });
+    socket.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'ATTACK', attackerId, targetPos } });
     setSelectedUnitId(null);
     setSelectedDeployUnitType(null);
   };
 
   const handleSelectUnit = (unit: Unit | null) => {
-    // Disable selection when it's not my turn
-    if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
+    // Allow selection even when it's not my turn (for viewing stats)
     if (unit) {
       // If a deploy type is selected and user selects their own unit,
       // prefer selecting the unit and reset the picker to None.
-      if (selectedDeployUnitType !== null && unit.ownerId === gameState.currentPlayer) {
+      if (selectedDeployUnitType !== null && gameState && unit.ownerId === gameState.currentPlayer) {
         setSelectedDeployUnitType(null);
       }
       setSelectedUnitId(unit.id);
@@ -165,8 +196,7 @@ function App() {
   const handleRotate = (unitId: string, targetPos: Position) => {
     if (winner !== null) return;
     if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
-    const conn: Socket = (window as any).__novusx_socket;
-    conn?.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'ROTATE', unitId, targetPos } });
+    socket.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'ROTATE', unitId, targetPos } });
     setSelectedUnitId(null);
     setSelectedUnit(null);
     setSelectedDeployUnitType(null);
@@ -175,10 +205,11 @@ function App() {
   const handleDeploy = (unitType: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer', targetPos: Position) => {
     if (winner !== null) return;
     if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
-    const conn: Socket = (window as any).__novusx_socket;
-    conn?.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'DEPLOY', unitType, targetPos } });
+    socket.emit('PLAYER_ACTION', { type: 'PLAYER_ACTION', gameId, action: { kind: 'DEPLOY', unitType, targetPos } });
   };
   const isMyTurn = !!gameState && playerId !== -1 && gameState.currentPlayer === playerId;
+  const inactivityRemaining = inactivityInfo ? Math.max(0, Math.ceil((inactivityInfo.deadline - nowTick) / 1000)) : null;
+  const disconnectGraceRemaining = disconnectGrace ? Math.max(0, Math.ceil((disconnectGrace.deadline - nowTick) / 1000)) : null;
 
   // Compute action mode
   const getActionMode = (): string => {
@@ -267,6 +298,9 @@ function App() {
         actionMode={getActionMode()}
         freeDeploymentsRemaining={gameState.freeDeploymentsRemaining}
         winner={winner}
+        gameId={gameId}
+        inactivityRemaining={inactivityRemaining}
+        disconnectGraceRemaining={disconnectGraceRemaining}
         onEndTurn={endTurnManually}
         onLeaveGame={leaveGame}
         isTurnBlocked={isRulesOpen}
@@ -283,19 +317,18 @@ function App() {
         </div>
       )}
       <div style={contentStyle}>
-        {isMyTurn && (
-          <UnitPicker
-            selected={selectedDeployUnitType}
-            onSelect={(val) => {
-              setSelectedDeployUnitType(val);
-              // When choosing a deploy type (not None), deselect any currently selected board unit
-              if (val !== null) {
-                setSelectedUnitId(null);
-                setSelectedUnit(null);
-              }
-            }}
-          />
-        )}
+        <UnitPicker
+          selected={selectedDeployUnitType}
+          onSelect={(val) => {
+            setSelectedDeployUnitType(val);
+            // When choosing a deploy type (not None), deselect any currently selected board unit
+            if (val !== null) {
+              setSelectedUnitId(null);
+              setSelectedUnit(null);
+            }
+          }}
+          disabled={!isMyTurn}
+        />
         {gameState && (
         <GameBoard 
           gameState={gameState}
@@ -307,6 +340,7 @@ function App() {
           selectedDeployUnitType={selectedDeployUnitType}
           onDeploy={handleDeploy}
           interactionDisabled={!isMyTurn}
+          viewerId={playerId}
         />)}
         <UnitStatsPanel unit={selectedUnit} />
       </div>

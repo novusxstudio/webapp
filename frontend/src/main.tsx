@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { LobbyPage } from './LobbyPage'
+import { WaitingRoom } from './WaitingRoom'
 
 function Root() {
   const [route, setRoute] = useState<string>(window.location.hash || '#/lobby');
@@ -12,6 +13,7 @@ function Root() {
     return () => window.removeEventListener('hashchange', handler);
   }, []);
   if (route.startsWith('#/game')) return <App />;
+  if (route.startsWith('#/waiting')) return <WaitingRoom />;
   return <LobbyPage />;
 }
 

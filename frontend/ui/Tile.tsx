@@ -22,6 +22,8 @@ export const Tile: React.FC<TileProps> = ({ isControlPoint, controlPointOwner, i
   // Apply tint for controlled control points
   if (isControlPoint && controlPointOwner !== null && controlPointOwner !== undefined) {
     backgroundColor = controlPointOwner === 0 ? '#dbeafe' : '#fee2e2';
+    // Set border to the occupying player's color
+    borderColor = controlPointOwner === 0 ? '#3b82f6' : '#ef4444';
   }
   
   // Override with action highlights
@@ -49,8 +51,17 @@ export const Tile: React.FC<TileProps> = ({ isControlPoint, controlPointOwner, i
     cursor: onClick ? 'pointer' : 'default',
   };
 
+  const occupiedPulse = isControlPoint && unit && !isAttackTarget && !isRotateTarget && !isHighlighted;
+  const pulseClass = occupiedPulse
+    ? unit?.ownerId === 0
+      ? 'cp-occupied-blue'
+      : unit?.ownerId === 1
+        ? 'cp-occupied-red'
+        : undefined
+    : undefined;
+
   return (
-    <div style={tileStyle} onClick={onClick}>
+    <div style={tileStyle} className={pulseClass} onClick={onClick}>
       {isControlPoint && <div style={controlPointStyle} />}
       {unit && <Unit unitId={unit.id} ownerId={unit.ownerId} unitSize={unitSize} />}
     </div>

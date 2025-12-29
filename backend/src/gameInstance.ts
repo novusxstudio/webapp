@@ -9,6 +9,9 @@ import { applyMove, applyAttack, applyRotate, applyDeployUnit, endTurn, controls
 export class GameInstance implements GameInstanceDescriptor {
   id: string;
   players: Map<PlayerId, string> = new Map(); // playerId -> socket.id
+  reconnectTokens: Map<PlayerId, string> = new Map();
+  disconnectTimers: Map<PlayerId, NodeJS.Timeout> = new Map();
+  inactivityTimer: NodeJS.Timeout | null = null;
   state: GameState;
 
   constructor(id?: string) {
@@ -49,6 +52,66 @@ export class GameInstance implements GameInstanceDescriptor {
 
   getPlayerSocketId(playerId: PlayerId): string | undefined {
     return this.players.get(playerId);
+  }
+
+  setReconnectToken(playerId: PlayerId, token: string) {
+    this.reconnectTokens.set(playerId, token);
+  }
+
+  getReconnectToken(playerId: PlayerId): string | undefined {
+    return this.reconnectTokens.get(playerId);
+  }
+
+  getOpponentId(playerId: PlayerId): PlayerId {
+    return playerId === 0 ? 1 : 0;
+  }
+
+  bindPlayerSocket(playerId: PlayerId, socketId: string) {
+    const oldId = this.players.get(playerId);
+    this.players.set(playerId, socketId);
+    return oldId;
+  }
+
+  startDisconnectGrace(playerId: PlayerId, io: IOServer, seconds = 60, onTimeout?: () => void) {
+    // Cancel any existing timer
+    const existing = this.disconnectTimers.get(playerId);
+    if (existing) {
+      clearTimeout(existing);
+      this.disconnectTimers.delete(playerId);
+    }
+    // Notify opponent
+    const opponentId = this.getOpponentId(playerId);
+    const oppSocket = this.getPlayerSocketId(opponentId);
+    if (oppSocket) {
+      io.to(oppSocket).emit('OPPONENT_DISCONNECTED', { gameId: this.id, graceSeconds: seconds });
+    }
+    // Start new timer
+    const timer = setTimeout(() => {
+      this.disconnectTimers.delete(playerId);
+      // Opponent wins after grace period
+      const winner: PlayerId = opponentId;
+      io.to(this.roomName()).emit('PLAYER_LEFT', { gameId: this.id, playerId });
+      io.to(this.roomName()).emit('GAME_CONCLUDED', { gameId: this.id, winner });
+      // Allow manager to clean up the game
+      if (onTimeout) onTimeout();
+    }, seconds * 1000);
+    this.disconnectTimers.set(playerId, timer);
+  }
+
+  cancelDisconnectGrace(playerId: PlayerId, io?: IOServer) {
+    const t = this.disconnectTimers.get(playerId);
+    if (t) {
+      clearTimeout(t);
+      this.disconnectTimers.delete(playerId);
+      if (io) {
+        // Notify opponent that grace is cancelled due to reconnect
+        const opponentId = this.getOpponentId(playerId);
+        const oppSocket = this.getPlayerSocketId(opponentId);
+        if (oppSocket) {
+          io.to(oppSocket).emit('DISCONNECT_GRACE_CANCEL', { gameId: this.id });
+        }
+      }
+    }
   }
 
   // Apply a player action (from the authoritative server perspective), using the same flow as the frontend App.
@@ -136,6 +199,57 @@ export class GameInstance implements GameInstanceDescriptor {
   // Broadcast the authoritative full state to a room for this game
   broadcastState(io: IOServer) {
     io.to(this.roomName()).emit('STATE_UPDATE', { gameId: this.id, state: this.state });
+  }
+
+  // Determine if either player controls all control points
+  checkVictory(): PlayerId | null {
+    if (controlsAllPoints(this.state, 0)) return 0;
+    if (controlsAllPoints(this.state, 1)) return 1;
+    return null;
+  }
+
+  startInactivityTimer(io: IOServer, seconds = 30, onTimeout?: () => void, onWin?: (winner: PlayerId) => void) {
+    if (this.inactivityTimer) {
+      clearTimeout(this.inactivityTimer);
+      this.inactivityTimer = null;
+    }
+    const current = this.state.currentPlayer as PlayerId;
+    const deadline = Date.now() + seconds * 1000;
+    io.to(this.roomName()).emit('INACTIVITY_TIMER_START', {
+      gameId: this.id,
+      seconds,
+      currentPlayer: this.state.currentPlayer,
+      deadline,
+    });
+    this.inactivityTimer = setTimeout(() => {
+      this.inactivityTimer = null;
+      // End the current turn due to inactivity and broadcast updated state
+      const newState = endTurn(this.state);
+      this.state = newState;
+      this.broadcastState(io);
+      // Check victory after endTurn
+      const winner = this.checkVictory();
+      if (winner !== null) {
+        // Defer conclusion to next tick so clients render the endTurn state first
+        setTimeout(() => {
+          io.to(this.roomName()).emit('GAME_CONCLUDED', { gameId: this.id, winner });
+          if (onWin) onWin(winner);
+        }, 0);
+      } else {
+        // Automatically start the inactivity timer for the next player's turn
+        this.startInactivityTimer(io, seconds, undefined, onWin);
+      }
+    }, seconds * 1000);
+  }
+
+  cancelInactivityTimer(io?: IOServer) {
+    if (this.inactivityTimer) {
+      clearTimeout(this.inactivityTimer);
+      this.inactivityTimer = null;
+      if (io) {
+        io.to(this.roomName()).emit('INACTIVITY_TIMER_CANCEL', { gameId: this.id });
+      }
+    }
   }
 
   roomName(): string {

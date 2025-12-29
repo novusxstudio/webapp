@@ -17,6 +17,7 @@ export interface CreateGameResponse {
   gameId: string;
   playerId: PlayerId;
   state: GameState;
+  reconnectToken: string;
 }
 
 export interface JoinGameRequest {
@@ -27,12 +28,20 @@ export interface JoinGameResponse {
   gameId: string;
   playerId: PlayerId;
   state: GameState;
+  reconnectToken: string;
 }
 
 export interface PlayerActionRequest {
   type: 'PLAYER_ACTION';
   gameId: string;
   action: PlayerAction;
+}
+
+export interface ReconnectRequest {
+  type: 'RECONNECT';
+  gameId: string;
+  playerId: PlayerId;
+  reconnectToken: string;
 }
 
 export interface GameInstanceDescriptor {

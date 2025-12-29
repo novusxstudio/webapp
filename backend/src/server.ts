@@ -1,18 +1,23 @@
 import http from 'http';
 import { Server as IOServer } from 'socket.io';
 import { GameManager } from './gameManager';
-import type { PlayerActionRequest } from './types';
+import type { PlayerActionRequest, ReconnectRequest } from './types';
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 
 const server = http.createServer();
 const io = new IOServer(server, {
   cors: { origin: '*' },
+  pingInterval: 5000,
+  pingTimeout: 8000,
 });
 
 const manager = new GameManager();
 
 io.on('connection', (socket) => {
+  // Debug: log new WebSocket connections
+  // eslint-disable-next-line no-console
+  console.log('WS connected:', socket.id);
   // Create game
   socket.on('CREATE_GAME', (_, cb?: (resp: any) => void) => {
     try {
@@ -24,6 +29,7 @@ io.on('connection', (socket) => {
       const game = manager.getGame(resp.gameId);
       if (game) {
         game.broadcastState(io);
+        // Do not start inactivity timer until both players have joined
       }
       // Broadcast updated available games list to all clients
       io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
@@ -41,6 +47,13 @@ io.on('connection', (socket) => {
       const game = manager.getGame(resp.gameId)!;
       io.to(game.roomName()).emit('GAME_JOINED', resp);
       game.broadcastState(io);
+      // Start inactivity timer only when both players are present (30s)
+      if (game.hasPlayer(0) && game.hasPlayer(1)) {
+        game.startInactivityTimer(io, 30, undefined, () => {
+          manager.endGame(game.id);
+          io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+        });
+      }
       // Broadcast updated available games list to all clients (game no longer joinable by P1)
       io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
     } catch (err: any) {
@@ -79,8 +92,54 @@ io.on('connection', (socket) => {
       // Apply action using existing logic
       game.applyPlayerAction(playerId, msg.action);
 
-      // Broadcast updated state to both players
+      // First broadcast the updated state so the UI shows the move
       game.broadcastState(io);
+
+      // Then check victory condition (all 3 control points)
+      const winner = game.checkVictory();
+      if (winner !== null) {
+        // Defer conclusion to next tick so clients render the move first
+        setTimeout(() => {
+          io.to(game.roomName()).emit('GAME_CONCLUDED', { gameId: game.id, winner });
+          manager.endGame(game.id);
+          io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+        }, 0);
+        return;
+      }
+
+      // Reset/start inactivity timer only if both players are present (30s)
+      if (game.hasPlayer(0) && game.hasPlayer(1)) {
+        game.startInactivityTimer(io, 30, undefined, () => {
+          manager.endGame(game.id);
+          io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+        });
+      }
+    } catch (err: any) {
+      socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
+    }
+  });
+
+  // Reconnect flow: reattach socket using token within grace window
+  socket.on('RECONNECT', (msg: ReconnectRequest) => {
+    try {
+      const game = manager.getGame(msg.gameId);
+      if (!game) throw new Error('Game not found');
+      if (![0, 1].includes(msg.playerId)) throw new Error('Invalid player');
+      const expected = game.getReconnectToken(msg.playerId);
+      if (!expected || expected !== msg.reconnectToken) throw new Error('Invalid reconnect token');
+
+      // Cancel grace timer and bind this socket to the seat; notify opponent
+      game.cancelDisconnectGrace(msg.playerId, io);
+      const oldId = game.bindPlayerSocket(msg.playerId, socket.id);
+      socket.join(game.roomName());
+      // Disconnect old socket if still connected
+      if (oldId && oldId !== socket.id) {
+        io.to(oldId).emit('SESSION_REPLACED', { gameId: game.id });
+        const oldSock = io.sockets.sockets.get(oldId);
+        oldSock?.disconnect(true);
+      }
+      // Send current state so client can resume
+      socket.emit('RESUME_GAME', { gameId: game.id, state: game.state });
     } catch (err: any) {
       socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
     }
@@ -112,11 +171,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    manager.removeSocket(socket);
+    manager.removeSocket(socket, io);
   });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   // eslint-disable-next-line no-console
   console.log(`Multiplayer server listening on port ${PORT}`);
 });

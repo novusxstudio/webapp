@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Unit } from '../src/game/GameState';
+import { getMatchupsForType } from '../src/game/rules';
 
 interface UnitStatsPanelProps {
   unit: Unit | null;
@@ -90,6 +91,22 @@ export const UnitStatsPanel: React.FC<UnitStatsPanelProps> = ({ unit }) => {
         <span style={statLabelStyle}>Attack Range:</span>
         <span style={statValueStyle}>{unit.stats.attackRange}</span>
       </div>
+
+      {(() => {
+        const match = getMatchupsForType(unit.stats.type);
+        return (
+          <>
+            <div style={statRowStyle}>
+              <span style={statLabelStyle}>Beats:</span>
+              <span style={statValueStyle}>{match.beats.join(', ') || '—'}</span>
+            </div>
+            <div style={statRowStyle}>
+              <span style={statLabelStyle}>Dies To:</span>
+              <span style={statValueStyle}>{match.diesTo.join(', ') || '—'}</span>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 };
