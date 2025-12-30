@@ -1,10 +1,13 @@
-import type { Position, GameState } from './GameState';
-import { CARDS } from './cards';
+import type { Position, GameState, Unit } from './GameState';
 import { UNIT_DATA } from './units';
 
 export const CONTROL_POINTS: Position[] = [
   { row: 3, col: 1 },
   { row: 3, col: 3 },
+  { row: 3, col: 5 },
+];
+const OUTSIDE_POINTS: Position[] = [
+  { row: 3, col: 1 },
   { row: 3, col: 5 },
 ];
 
@@ -19,9 +22,7 @@ export function getDistance(a: Position, b: Position): number {
   return dx + dy;
 }
 
-export function calculateDamage(atk: number, def: number): number {
-  return Math.max(atk - def, 0);
-}
+// One-shot deterministic combat: no damage/HP
 
 export function controlsPosition(state: GameState, playerId: number, pos: Position): boolean {
   const tile = state.grid[pos.row - 1][pos.col - 1];
@@ -31,226 +32,98 @@ export function controlsPosition(state: GameState, playerId: number, pos: Positi
 export function controlsAllPoints(state: GameState, playerId: number): boolean {
   return CONTROL_POINTS.every(pos => controlsPosition(state, playerId, pos));
 }
-
-export function checkWin(state: GameState, playerId: number): boolean {
-  return controlsAllPoints(state, playerId);
+function countOutsideControl(state: GameState, playerId: number): number {
+  return OUTSIDE_POINTS.filter(p => controlsPosition(state, playerId, p)).length;
 }
-export function canDeploy(state: GameState, cardId: string, targetPos: Position): boolean {
-  // Card must exist
-  const card = CARDS[cardId];
-  if (!card) return false;
-  
-  // Card must be a unit card
-  if (card.type !== 'unit') return false;
-  
-  // Card must be in current player's hand
-  const currentPlayer = state.players[state.currentPlayer];
-  if (!currentPlayer.hand.includes(cardId)) return false;
-  
-  // Player must have enough coins
-  if (currentPlayer.coins < card.cost) return false;
-  
+
+function middleControlBonus(state: GameState, playerId: number): number {
+  // +1 action if holding the middle control point
+  return controlsPosition(state, playerId, { row: 3, col: 3 }) ? 1 : 0;
+}
+
+const LABEL_TO_KEY: Record<string, keyof typeof UNIT_DATA> = {
+  Swordsman: 'swordsman',
+  Shieldman: 'shieldman',
+  Spearman: 'spearman',
+  Cavalry: 'cavalry',
+  Archer: 'archer',
+};
+
+function normalizeUnitKey(key: string): keyof typeof UNIT_DATA {
+  if ((UNIT_DATA as any)[key]) return key as keyof typeof UNIT_DATA;
+  const mapped = LABEL_TO_KEY[key];
+  if (mapped) return mapped;
+  const lower = key.toLowerCase();
+  if ((UNIT_DATA as any)[lower]) return lower as keyof typeof UNIT_DATA;
+  throw new Error('Unknown unit key');
+}
+
+export function canDeployUnit(state: GameState, unitKey: string, targetPos: Position): boolean {
   // Target tile must be empty
   const targetTile = state.grid[targetPos.row - 1][targetPos.col - 1];
   if (targetTile.unit !== null) return false;
-  
-  // Target row must be valid for current player
+
+  // Valid row per player
   const validRow = state.currentPlayer === 0 ? 1 : 5;
   if (targetPos.row !== validRow) return false;
-  
+
+  // Unit must exist
+  let normalized: keyof typeof UNIT_DATA;
+  try {
+    normalized = normalizeUnitKey(unitKey);
+  } catch {
+    return false;
+  }
+  const unitStats = UNIT_DATA[normalized];
+  if (!unitStats) return false;
+
+  // Must have either a free deployment available (before action) or an action to spend
+  const freeAvailable = state.freeDeploymentsRemaining > 0 && !state.hasActedThisTurn;
+  const actionsAvailable = state.players[state.currentPlayer].actionsRemaining > 0;
+  if (!freeAvailable && !actionsAvailable) return false;
+
   return true;
 }
 
-export function applyDeploy(state: GameState, cardId: string, targetPos: Position): GameState {
-  // Validate deployment
-  if (!canDeploy(state, cardId, targetPos)) {
-    throw new Error(`Invalid deployment of ${cardId} to (${targetPos.row}, ${targetPos.col})`);
+export function applyDeployUnit(state: GameState, unitKey: string, targetPos: Position): GameState {
+  if (!canDeployUnit(state, unitKey, targetPos)) {
+    throw new Error('Invalid deployment');
   }
-  
-  // Get unit stats
-  const unitStats = UNIT_DATA[cardId];
-  if (!unitStats) {
-    throw new Error(`Unit data not found for ${cardId}`);
-  }
-  
-  // Create unique unit id
-  const unitId = `${state.currentPlayer}-${cardId}-${Date.now()}`;
-  
-  // Create new unit
-  const newUnit = {
+
+  const normalized = normalizeUnitKey(unitKey);
+  const unitStats = UNIT_DATA[normalized];
+  const unitId = `${state.currentPlayer}-${String(normalized)}-${Date.now()}`;
+  const newUnit: Unit = {
     id: unitId,
     ownerId: state.currentPlayer,
     stats: { ...unitStats },
     position: { row: targetPos.row, col: targetPos.col },
   };
-  
-  // Get card cost
-  const card = CARDS[cardId];
-  
-  // Remove card from hand, add to discard, and deduct cost (only one occurrence)
-  const newPlayers = state.players.map((player, index) => {
-    if (index === state.currentPlayer) {
-      const cardIndex = player.hand.indexOf(cardId);
-      const newHand = [...player.hand.slice(0, cardIndex), ...player.hand.slice(cardIndex + 1)];
-      return {
-        ...player,
-        hand: newHand,
-        discard: [...player.discard, cardId],
-        coins: player.coins - card.cost,
-      };
-    }
-    return player;
-  });
-  
-  // Place unit on board
-  const newGrid = state.grid.map((row, rowIndex) => {
-    if (rowIndex === targetPos.row - 1) {
-      return row.map((tile, colIndex) => {
-        if (colIndex === targetPos.col - 1) {
-          return {
-            ...tile,
-            unit: newUnit,
-          };
+
+  // Place unit
+  const newGrid = state.grid.map((row, r) => {
+    if (r === targetPos.row - 1) {
+      return row.map((tile, c) => {
+        if (c === targetPos.col - 1) {
+          return { ...tile, unit: newUnit };
         }
         return tile;
       });
     }
     return row;
   });
-  
-  return {
-    ...state,
-    grid: newGrid,
-    players: newPlayers,
-  };
+
+  return { ...state, grid: newGrid };
 }
 
-export function canCastSpell(state: GameState, cardId: string, targetPos: Position): boolean {
-  // Card must exist
-  const card = CARDS[cardId];
-  if (!card) return false;
-  
-  // Card must be a spell card
-  if (card.type !== 'spell') return false;
-  
-  // Card must be in current player's hand
-  const currentPlayer = state.players[state.currentPlayer];
-  if (!currentPlayer.hand.includes(cardId)) return false;
-  
-  // Player must have enough coins
-  if (currentPlayer.coins < card.cost) return false;
-  
-  // Target tile must contain a unit
-  const targetTile = state.grid[targetPos.row - 1][targetPos.col - 1];
-  if (targetTile.unit === null) return false;
-  
-  const targetUnit = targetTile.unit;
-  
-  // Lightning Strike: target must be enemy unit
-  if (cardId === 'lightningStrike') {
-    if (targetUnit.ownerId === state.currentPlayer) return false;
-  }
-  
-  // Healing Circle: target must be friendly unit
-  if (cardId === 'healingCircle') {
-    if (targetUnit.ownerId !== state.currentPlayer) return false;
-  }
-  
-  return true;
+export function checkWin(state: GameState, playerId: number): boolean {
+  return controlsAllPoints(state, playerId);
 }
-
-export function applySpell(state: GameState, cardId: string, targetPos: Position): GameState {
-  // Validate spell casting
-  if (!canCastSpell(state, cardId, targetPos)) {
-    throw new Error(`Invalid spell cast of ${cardId} at (${targetPos.row}, ${targetPos.col})`);
-  }
-  
-  const targetTile = state.grid[targetPos.row - 1][targetPos.col - 1];
-  const targetUnit = targetTile.unit!;
-  
-  // Apply spell effect
-  let newGrid = state.grid;
-  
-  if (cardId === 'lightningStrike') {
-    // Deal 3 damage ignoring DEF
-    const newHp = targetUnit.stats.hp - 3;
-    
-    newGrid = state.grid.map((row, rowIndex) => {
-      if (rowIndex === targetPos.row - 1) {
-        return row.map((tile, colIndex) => {
-          if (colIndex === targetPos.col - 1) {
-            if (newHp <= 0) {
-              // Remove unit
-              return { ...tile, unit: null };
-            } else {
-              // Update unit HP
-              return {
-                ...tile,
-                unit: {
-                  ...targetUnit,
-                  stats: {
-                    ...targetUnit.stats,
-                    hp: newHp
-                  }
-                }
-              };
-            }
-          }
-          return tile;
-        });
-      }
-      return row;
-    });
-  } else if (cardId === 'healingCircle') {
-    // Heal unit to max HP
-    newGrid = state.grid.map((row, rowIndex) => {
-      if (rowIndex === targetPos.row - 1) {
-        return row.map((tile, colIndex) => {
-          if (colIndex === targetPos.col - 1) {
-            return {
-              ...tile,
-              unit: {
-                ...targetUnit,
-                stats: {
-                  ...targetUnit.stats,
-                  hp: targetUnit.stats.maxHp
-                }
-              }
-            };
-          }
-          return tile;
-        });
-      }
-      return row;
-    });
-  }
-  
-  // Get card cost
-  const card = CARDS[cardId];
-  
-  // Remove spell card from hand, add to discard, and deduct cost (only one occurrence)
-  const newPlayers = state.players.map((player, index) => {
-    if (index === state.currentPlayer) {
-      const cardIndex = player.hand.indexOf(cardId);
-      const newHand = [...player.hand.slice(0, cardIndex), ...player.hand.slice(cardIndex + 1)];
-      return {
-        ...player,
-        hand: newHand,
-        discard: [...player.discard, cardId],
-        coins: player.coins - card.cost,
-      };
-    }
-    return player;
-  });
-  
-  return {
-    ...state,
-    grid: newGrid,
-    players: newPlayers,
-  };
-}
+// Card and spell systems removed
 
 export function canMove(state: GameState, unitId: string, target: Position): boolean {
+  // Must have actions remaining
+  if (state.players[state.currentPlayer].actionsRemaining <= 0) return false;
   // Find the unit by unitId
   let foundUnit = null;
   let sourcePos = null;
@@ -316,6 +189,7 @@ export function canMove(state: GameState, unitId: string, target: Position): boo
 }
 
 export function canRotate(state: GameState, unitId: string, targetPos: Position): boolean {
+  if (state.players[state.currentPlayer].actionsRemaining <= 0) return false;
   // Find the source unit by unitId
   let sourceUnit = null;
   let sourcePos = null;
@@ -352,17 +226,42 @@ export function canRotate(state: GameState, unitId: string, targetPos: Position)
   if (targetUnit.ownerId !== state.currentPlayer) {
     return false;
   }
-  
-  // Units must be orthogonally adjacent (distance === 1)
-  const distance = getDistance(sourcePos, targetPos);
-  if (distance !== 1) {
+  // Disable rotation between units of the same type
+  if (sourceUnit.stats.type === targetUnit.stats.type) {
     return false;
   }
+  
+  const distance = getDistance(sourcePos, targetPos);
+  const dx = Math.abs(targetPos.col - sourcePos.col);
+  const dy = Math.abs(targetPos.row - sourcePos.row);
+  const isDiagonal = dx === 1 && dy === 1;
+  // Allow orthogonal adjacency for all
+  if (distance === 1) {
+    return true;
+  }
+  // Allow diagonal adjacency only for Cavalry
+  if (isDiagonal && sourceUnit.stats.type === 'Cavalry') {
+    return true;
+  }
+  // Cavalry long rotation: two tiles orthogonally with empty middle
+  if (sourceUnit.stats.type === 'Cavalry' && ((dx === 2 && dy === 0) || (dx === 0 && dy === 2))) {
+    const midPos: Position = {
+      row: dy === 0 ? sourcePos.row : (sourcePos.row + targetPos.row) / 2,
+      col: dx === 0 ? sourcePos.col : (sourcePos.col + targetPos.col) / 2,
+    };
+    const midTile = state.grid[midPos.row - 1][midPos.col - 1];
+    if (midTile.unit !== null) return false;
+    return true;
+  }
+  return false;
   
   return true;
 }
 
 export function applyMove(state: GameState, unitId: string, target: Position): GameState {
+  if (!canMove(state, unitId, target)) {
+    throw new Error('Move not allowed');
+  }
   // Validate move
   if (!canMove(state, unitId, target)) {
     throw new Error(`Invalid move for unit ${unitId} to (${target.row}, ${target.col})`);
@@ -415,6 +314,9 @@ export function applyMove(state: GameState, unitId: string, target: Position): G
 }
 
 export function applyRotate(state: GameState, unitId: string, targetPos: Position): GameState {
+  if (!canRotate(state, unitId, targetPos)) {
+    throw new Error('Rotate not allowed');
+  }
   // Validate rotate
   if (!canRotate(state, unitId, targetPos)) {
     throw new Error(`Invalid rotate for unit ${unitId} with (${targetPos.row}, ${targetPos.col})`);
@@ -439,35 +341,58 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
   // Get target unit
   const targetTile = state.grid[targetPos.row - 1][targetPos.col - 1];
   const targetUnit = targetTile.unit!;
-  
-  // Swap positions
-  const newGrid = state.grid.map((row, rowIndex) => {
-    if (rowIndex === sourcePos!.row - 1 || rowIndex === targetPos.row - 1) {
-      return row.map((tile, colIndex) => {
-        if (rowIndex === sourcePos!.row - 1 && colIndex === sourcePos!.col - 1) {
-          // Place target unit at source position
-          return {
-            ...tile,
-            unit: {
-              ...targetUnit,
-              position: { row: sourcePos!.row, col: sourcePos!.col },
-            }
-          };
-        } else if (rowIndex === targetPos.row - 1 && colIndex === targetPos.col - 1) {
-          // Place source unit at target position
-          return {
-            ...tile,
-            unit: {
-              ...sourceUnit!,
-              position: { row: targetPos.row, col: targetPos.col },
-            }
-          };
-        }
-        return tile;
-      });
-    }
-    return row;
-  });
+  const dx = Math.abs(targetPos.col - sourcePos!.col);
+  const dy = Math.abs(targetPos.row - sourcePos!.row);
+  const isDiagonal = dx === 1 && dy === 1;
+  const isAdj = dx + dy === 1;
+  let newGrid: GameState['grid'];
+  if (isAdj || isDiagonal) {
+    // Simple swap for adjacency or diagonal cavalry swap
+    newGrid = state.grid.map((row, rowIndex) => {
+      if (rowIndex === sourcePos!.row - 1 || rowIndex === targetPos.row - 1) {
+        return row.map((tile, colIndex) => {
+          if (rowIndex === sourcePos!.row - 1 && colIndex === sourcePos!.col - 1) {
+            return {
+              ...tile,
+              unit: { ...targetUnit, position: { row: sourcePos!.row, col: sourcePos!.col } }
+            };
+          }
+          if (rowIndex === targetPos.row - 1 && colIndex === targetPos.col - 1) {
+            return {
+              ...tile,
+              unit: { ...sourceUnit!, position: { row: targetPos.row, col: targetPos.col } }
+            };
+          }
+          return tile;
+        });
+      }
+      return row;
+    });
+  } else if ((dx === 2 && dy === 0) || (dx === 0 && dy === 2)) {
+    // Cavalry long rotation: cavalry -> target; target -> middle; source becomes empty
+    const midPos: Position = {
+      row: dy === 0 ? sourcePos!.row : (sourcePos!.row + targetPos.row) / 2,
+      col: dx === 0 ? sourcePos!.col : (sourcePos!.col + targetPos.col) / 2,
+    };
+    newGrid = state.grid.map((row, rowIndex) => row.map((tile, colIndex) => {
+      const here: Position = { row: rowIndex + 1, col: colIndex + 1 };
+      if (here.row === sourcePos!.row && here.col === sourcePos!.col) {
+        // Source becomes empty
+        return { ...tile, unit: null };
+      }
+      if (here.row === midPos.row && here.col === midPos.col) {
+        // Middle gets the target unit
+        return { ...tile, unit: { ...targetUnit, position: { row: midPos.row, col: midPos.col } } };
+      }
+      if (here.row === targetPos.row && here.col === targetPos.col) {
+        // Target gets the cavalry
+        return { ...tile, unit: { ...sourceUnit!, position: { row: targetPos.row, col: targetPos.col } } };
+      }
+      return tile;
+    }));
+  } else {
+    throw new Error('Rotate not allowed');
+  }
   
   return {
     ...state,
@@ -475,7 +400,63 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
   };
 }
 
+// Archer line-of-sight helper
+function hasLineOfSight(state: GameState, from: Position, to: Position): boolean {
+  const dx = to.col - from.col;
+  const dy = to.row - from.row;
+  const adx = Math.abs(dx);
+  const ady = Math.abs(dy);
+
+  // Orthogonal lines: check intermediate tiles (exclude endpoints)
+  if (adx === 0) {
+    const step = dy > 0 ? 1 : -1;
+    for (let r = from.row + step; r !== to.row; r += step) {
+      if (state.grid[r - 1][from.col - 1].unit) return false;
+    }
+    return true;
+  }
+  if (ady === 0) {
+    const step = dx > 0 ? 1 : -1;
+    for (let c = from.col + step; c !== to.col; c += step) {
+      if (state.grid[from.row - 1][c - 1].unit) return false;
+    }
+    return true;
+  }
+
+  // Diagonal adjacency (dx===±1, dy===±1) has no intermediate tile; consider clear
+  if (adx === 1 && ady === 1) {
+    return true;
+  }
+
+  // Non-straight paths beyond adjacency: no line-of-sight
+  return false;
+}
+
+export function getMatchupsForType(type: Unit['stats']['type']): { beats: Unit['stats']['type'][]; diesTo: Unit['stats']['type'][] } {
+  const beats = BEATS[type] ?? [];
+  const diesTo: Unit['stats']['type'][] = [];
+  (Object.keys(BEATS) as Array<Unit['stats']['type']>).forEach(t => {
+    if (BEATS[t].includes(type)) diesTo.push(t);
+  });
+  return { beats, diesTo };
+}
+
+const BEATS: Record<Unit['stats']['type'], Unit['stats']['type'][]> = {
+  Swordsman: ['Swordsman', 'Spearman', 'Cavalry', 'Archer'],
+  Shieldman: ['Archer', 'Cavalry'],
+  Spearman: ['Swordsman', 'Spearman', 'Shieldman', 'Cavalry', 'Archer'],
+  Cavalry: ['Cavalry', 'Spearman', 'Archer'],
+  Archer: ['Cavalry', 'Spearman', 'Archer'],
+};
+
+function isCloseRange(a: Position, b: Position): boolean {
+  return getDistance(a, b) === 1;
+}
+
 export function applyAttack(state: GameState, attackerId: string, targetPos: Position): GameState {
+  if (state.players[state.currentPlayer].actionsRemaining <= 0) {
+    throw new Error('No actions remaining');
+  }
   // Find the attacker unit by attackerId
   let attacker = null;
   let attackerPos = null;
@@ -514,279 +495,142 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
   if (distance > attacker.stats.attackRange) {
     throw new Error(`Attack distance ${distance} exceeds unit's attackRange ${attacker.stats.attackRange}`);
   }
-  
-  // Calculate damage
-  const damage = calculateDamage(attacker.stats.atk, defender.stats.def);
-  const newHp = defender.stats.hp - damage;
-  
-  // Clone only affected row
+
+  // One-shot combat resolution
+  const aType = attacker.stats.type;
+  const dType = defender.stats.type;
+
+  // Archer vs Archer: both removed
+  let removeAttacker = false;
+  let removeDefender = false;
+
+  if (aType === 'Archer' && dType === 'Archer') {
+    removeAttacker = true;
+    removeDefender = true;
+  } else if (aType === 'Archer') {
+    // Archer constraints
+    if (isCloseRange(attackerPos, targetPos)) {
+      // Archers always lose in close-range
+      removeAttacker = true;
+    } else {
+      // Must have clear line-of-sight to target
+      if (!hasLineOfSight(state, attackerPos, targetPos)) {
+        throw new Error('Line of sight is blocked for Archer');
+      }
+      // Archers can now kill Swordsmen at range; Shieldmen remain immune
+      if (dType === 'Shieldman') {
+        removeAttacker = false;
+        removeDefender = false;
+      } else {
+        removeDefender = true;
+      }
+    }
+    } else {
+      // Melee units: deterministic matchup
+      const attackerBeats = BEATS[aType];
+      const defenderBeats = BEATS[dType];
+      const attackerWins = attackerBeats.includes(dType);
+      const defenderWins = defenderBeats.includes(aType);
+
+      if (attackerWins && defenderWins) {
+        // Mutual advantage: both removed
+        removeAttacker = true;
+        removeDefender = true;
+      } else if (attackerWins) {
+        removeDefender = true;
+      } else if (defenderWins) {
+        removeAttacker = true;
+      } else {
+        // Neither has advantage: invalid attack (should be blocked by canAttack)
+        throw new Error('Invalid attack: no advantage');
+      }
+    }
+
+  // Apply removals immediately
   const newGrid = state.grid.map((row, rowIndex) => {
-    if (rowIndex === targetPos.row - 1) {
-      return row.map((tile, colIndex) => {
-        if (colIndex === targetPos.col - 1) {
-          if (newHp <= 0) {
-            // Remove unit
-            return { ...tile, unit: null };
-          } else {
-            // Update defender HP
-            return {
-              ...tile,
-              unit: {
-                ...defender,
-                stats: {
-                  ...defender.stats,
-                  hp: newHp
-                }
-              }
-            };
-          }
-        }
-        return tile;
-      });
-    }
-    return row;
+    return row.map((tile, colIndex) => {
+      let unit = tile.unit;
+      if (rowIndex === attackerPos.row - 1 && colIndex === attackerPos.col - 1 && removeAttacker) {
+        unit = null;
+      }
+      if (rowIndex === targetPos.row - 1 && colIndex === targetPos.col - 1 && removeDefender) {
+        unit = null;
+      }
+      return { ...tile, unit };
+    });
   });
-  
-  return {
-    ...state,
-    grid: newGrid
-  };
+
+  return { ...state, grid: newGrid };
 }
 
-// Shuffle array using Fisher-Yates algorithm
-function shuffleArray<T>(array: T[]): T[] {
-  const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-}
-
-export function createDeck(): string[] {
-  const deck: string[] = [];
-  
-  // Add 3 copies of each card
-  for (const cardId of Object.keys(CARDS)) {
-    deck.push(cardId, cardId, cardId);
-  }
-  
-  // Shuffle the deck
-  return shuffleArray(deck);
-}
-
-export function drawCard(state: GameState): GameState {
-  const currentPlayer = state.players[state.currentPlayer];
-  
-  // If deck is empty, do nothing
-  if (currentPlayer.deck.length === 0) {
-    return state;
-  }
-  
-  // If player doesn't have enough coins, do nothing
-  if (currentPlayer.coins < 1) {
-    return state;
-  }
-  
-  // Draw top card from deck
-  const [drawnCard, ...remainingDeck] = currentPlayer.deck;
-  
-  // Add card to hand and deduct 1 coin
-  const newPlayers = state.players.map((player, index) => {
-    if (index === state.currentPlayer) {
-      return {
-        ...player,
-        hand: [...player.hand, drawnCard],
-        deck: remainingDeck,
-        coins: player.coins - 1,
-      };
+export function canAttack(state: GameState, attackerId: string, targetPos: Position): boolean {
+  // Find attacker and defender
+  let attacker: Unit | null = null;
+  let attackerPos: Position | null = null;
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < 5; c++) {
+      const u = state.grid[r][c].unit;
+      if (u && u.id === attackerId) {
+        attacker = u;
+        attackerPos = { row: r + 1, col: c + 1 };
+        break;
+      }
     }
-    return player;
-  });
-  
-  return {
-    ...state,
-    players: newPlayers,
-  };
+    if (attacker) break;
+  }
+  if (!attacker || !attackerPos) return false;
+  const tile = state.grid[targetPos.row - 1][targetPos.col - 1];
+  if (!tile.unit) return false;
+  const defender = tile.unit;
+  if (defender.ownerId === attacker.ownerId) return false;
+
+  const distance = getDistance(attackerPos, targetPos);
+  if (distance > attacker.stats.attackRange) return false;
+
+  // Archer-specific validation
+  if (attacker.stats.type === 'Archer') {
+    if (isCloseRange(attackerPos, targetPos)) {
+      // Archers can engage at close range but will lose; allow selection
+      return true;
+    }
+    // Prevent ranged targeting of Shieldman entirely; allow Swordsman
+    if (defender.stats.type === 'Shieldman') {
+      return false;
+    }
+    // Require line-of-sight for ranged shots
+    return hasLineOfSight(state, attackerPos, targetPos);
+  }
+
+  // Non-archers: require that an advantage exists; otherwise attacking is invalid
+  const attackerBeats = BEATS[attacker.stats.type];
+  const defenderBeats = BEATS[defender.stats.type];
+  const attackerWins = attackerBeats.includes(defender.stats.type);
+  const defenderWins = defenderBeats.includes(attacker.stats.type);
+
+  // If neither has advantage, attack is not a valid option
+  if (!attackerWins && !defenderWins) return false;
+  // Otherwise valid (including mutual advantage or attacker/defender advantage)
+  return true;
 }
 
-export function getControlBonuses(state: GameState, playerId: number): { bonusCoins: number; bonusActions: number } {
-  let bonusCoins = 0;
-  let bonusActions = 0;
-  
-  // (3,1) → +2 coins
-  if (controlsPosition(state, playerId, { row: 3, col: 1 })) {
-    bonusCoins += 2;
-  }
-  
-  // (3,5) → +1 coin
-  if (controlsPosition(state, playerId, { row: 3, col: 5 })) {
-    bonusCoins += 1;
-  }
-  
-  // (3,3) → +1 extra action
-  if (controlsPosition(state, playerId, { row: 3, col: 3 })) {
-    bonusActions += 1;
-  }
-  
-  return { bonusCoins, bonusActions };
-}
+// Control bonuses removed (no coins/resources)
+
+// startActionPhase removed; phases no longer used
 
 export function endTurn(state: GameState): GameState {
   const newCurrentPlayer = state.currentPlayer === 0 ? 1 : 0;
-  
-  // Get control bonuses for new current player
-  const bonuses = getControlBonuses(state, newCurrentPlayer);
-  
-  const newPlayers = state.players.map((player, index) => {
-    if (index === newCurrentPlayer) {
-      return {
-        ...player,
-        actionsRemaining: 1 + bonuses.bonusActions,
-        coins: player.coins + 1 + bonuses.bonusCoins
-      };
-    }
-    return player;
-  });
+  // Compute next player's actions: base 1 + center bonus
+  const bonus = middleControlBonus(state, newCurrentPlayer);
+  const freeDeploys = countOutsideControl(state, newCurrentPlayer);
+  const players = state.players.map((p, i) => i === newCurrentPlayer ? { ...p, actionsRemaining: 1 + bonus } : p);
 
   return {
     ...state,
     currentPlayer: newCurrentPlayer,
     turnNumber: state.turnNumber + 1,
-    players: newPlayers
+    players,
+    freeDeploymentsRemaining: freeDeploys,
+    hasActedThisTurn: false,
   };
 }
-
-export function sellCard(state: GameState, cardId: string): GameState {
-  const currentPlayer = state.players[state.currentPlayer];
-  
-  // Card must be in current player's hand
-  if (!currentPlayer.hand.includes(cardId)) {
-    throw new Error(`Card ${cardId} not in current player's hand`);
-  }
-  
-  // Remove card from hand, add to discard, and add 1 coin (only one occurrence)
-  const newPlayers = state.players.map((player, index) => {
-    if (index === state.currentPlayer) {
-      const cardIndex = player.hand.indexOf(cardId);
-      const newHand = [...player.hand.slice(0, cardIndex), ...player.hand.slice(cardIndex + 1)];
-      return {
-        ...player,
-        hand: newHand,
-        discard: [...player.discard, cardId],
-        coins: player.coins + 1
-      };
-    }
-    return player;
-  });
-  
-  return {
-    ...state,
-    players: newPlayers
-  };
-}
-
-export function canRecruit(state: GameState, cardId: string): boolean {
-  // Card must be Recruitment
-  if (cardId !== 'recruitment') return false;
-  
-  // Card must be in current player's hand
-  const currentPlayer = state.players[state.currentPlayer];
-  if (!currentPlayer.hand.includes(cardId)) return false;
-  
-  // Player must have enough coins
-  if (currentPlayer.coins < 3) return false;
-  
-  // Deck must not be empty
-  if (currentPlayer.deck.length === 0) return false;
-  
-  return true;
-}
-
-export function applyRecruit(state: GameState, cardId: string, chosenCardId: string): GameState {
-  // Validate recruitment
-  if (!canRecruit(state, cardId)) {
-    throw new Error(`Invalid recruitment with card ${cardId}`);
-  }
-  
-  const currentPlayer = state.players[state.currentPlayer];
-  
-  // Chosen card must be in deck
-  if (!currentPlayer.deck.includes(chosenCardId)) {
-    throw new Error(`Card ${chosenCardId} not found in deck`);
-  }
-  
-  // Remove Recruitment card from hand, add to discard, remove chosen card from deck, add chosen card to hand, deduct 3 coins
-  const newPlayers = state.players.map((player, index) => {
-    if (index === state.currentPlayer) {
-      const recruitmentIndex = player.hand.indexOf(cardId);
-      const newHand = [...player.hand.slice(0, recruitmentIndex), ...player.hand.slice(recruitmentIndex + 1), chosenCardId];
-      const deckIndex = player.deck.indexOf(chosenCardId);
-      const newDeck = [...player.deck.slice(0, deckIndex), ...player.deck.slice(deckIndex + 1)];
-      return {
-        ...player,
-        hand: newHand,
-        deck: newDeck,
-        discard: [...player.discard, cardId],
-        coins: player.coins - 3
-      };
-    }
-    return player;
-  });
-  
-  return {
-    ...state,
-    players: newPlayers
-  };
-}
-
-export function canRetrieveFromDiscard(state: GameState, cardId: string): boolean {
-  const currentPlayer = state.players[state.currentPlayer];
-  
-  // Card must exist in current player's discard pile
-  if (!currentPlayer.discard.includes(cardId)) {
-    return false;
-  }
-  
-  // Card must exist in CARDS
-  const card = CARDS[cardId];
-  if (!card) {
-    return false;
-  }
-  
-  // Player must have enough coins
-  if (currentPlayer.coins < card.cost) {
-    return false;
-  }
-  
-  return true;
-}
-
-export function applyRetrieveFromDiscard(state: GameState, cardId: string): GameState {
-  // Validate retrieval
-  if (!canRetrieveFromDiscard(state, cardId)) {
-    throw new Error(`Cannot retrieve card ${cardId} from discard`);
-  }
-  
-  const card = CARDS[cardId];
-  
-  // Remove card from discard, add to hand, deduct cost (only one occurrence)
-  const newPlayers = state.players.map((player, index) => {
-    if (index === state.currentPlayer) {
-      const cardIndex = player.discard.indexOf(cardId);
-      const newDiscard = [...player.discard.slice(0, cardIndex), ...player.discard.slice(cardIndex + 1)];
-      return {
-        ...player,
-        discard: newDiscard,
-        hand: [...player.hand, cardId],
-        coins: player.coins - card.cost,
-      };
-    }
-    return player;
-  });
-  
-  return {
-    ...state,
-    players: newPlayers
-  };
-}
+// Card retrieval/recruit/sell/draw removed
