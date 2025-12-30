@@ -16,6 +16,12 @@ interface GameBoardProps {
   viewerId?: number;
 }
 
+/**
+ * GameBoard: Interactive 5×5 grid rendering and interaction logic.
+ * - Highlights valid move/attack/rotate/deploy targets based on rules.
+ * - Converts display rows to actual rows depending on viewer perspective.
+ * - Emits UI intents via callbacks for the App to forward to the server.
+ */
 export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId, onSelectUnit, onMove, onAttack, onRotate, selectedDeployUnitType = null, onDeploy, interactionDisabled = false, viewerId = 0 }) => {
   const TILE_SIZE = 100;
   const UNIT_SIZE = TILE_SIZE * 0.8;
@@ -27,12 +33,15 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
 
   // Map displayed row to actual game state's row depending on viewer perspective.
   // Player 0 sees rows as-is; Player 1 sees row 1 as 5, 2 as 4, ..., 5 as 1.
+  /** Map displayed row (1..5) to actual game row for the viewing player. */
   const toActualRow = (displayRow: number): number => (viewerId === 0 ? (6 - displayRow) : displayRow);
 
+  /** Check if a tile is one of the control points. */
   const isControlPoint = (row: number, col: number): boolean => {
     return controlPoints.some(cp => cp.row === row && cp.col === col);
   };
 
+  /** Get lightweight unit info for a display position (id/owner). */
   const getUnitAtPosition = (row: number, col: number) => {
     const actualRow = toActualRow(row);
     const tile = gameState.grid[actualRow - 1][col - 1];
@@ -45,12 +54,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
     return null;
   };
 
+  /** Return the owner id for a control point tile, otherwise null. */
   const getControlPointOwner = (row: number, col: number): number | null => {
     if (!isControlPoint(row, col)) return null;
     const unit = getUnitAtPosition(row, col);
     return unit ? unit.ownerId : null;
   };
 
+  /** Locate the full `Unit` object for the currently selected unit id. */
   const findSelectedUnit = () => {
     if (!selectedUnitId) return null;
     
@@ -65,6 +76,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
     return null;
   };
 
+  /**
+   * Verify the selected unit belongs to the current player and they have actions remaining.
+   */
   const canTakeAction = (): boolean => {
     const selectedUnit = findSelectedUnit();
     if (!selectedUnit) return false;
@@ -79,6 +93,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
     return true;
   };
 
+  /** Validate whether the tile is a legal move destination for the selected unit. */
   const isValidMoveDestination = (row: number, col: number): boolean => {
     const selectedUnit = findSelectedUnit();
     if (!selectedUnit) return false;
@@ -108,6 +123,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
     return true;
   };
 
+  /** Validate whether the tile contains a legal attack target for the selected unit. */
   const isValidAttackTarget = (row: number, col: number): boolean => {
     const selectedUnit = findSelectedUnit();
     if (!selectedUnit) return false;
@@ -125,6 +141,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
     return canAttack(gameState, selectedUnit.id, { row: actualRow, col });
   };
 
+  /** Validate whether the tile is a legal rotate target (swap) for the selected unit. */
   const isValidRotateTarget = (row: number, col: number): boolean => {
     if (!selectedUnitId) return false;
     
@@ -133,6 +150,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
     return canRotate(gameState, selectedUnitId, { row: actualRow, col });
   };
 
+  /** Validate whether a unit can be deployed on the tile for the current player. */
   const isValidDeploymentTile = (row: number, col: number): boolean => {
     if (!selectedDeployUnitType) return false;
     try {
@@ -143,6 +161,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({ gameState, selectedUnitId,
     }
   };
 
+  /**
+   * Handle tile clicks: deploy, rotate, attack, move, or select based on context.
+   * Interaction rules depend on turn ownership and current selection mode.
+   */
   const handleTileClick = (row: number, col: number) => {
     const actualRow = toActualRow(row);
 

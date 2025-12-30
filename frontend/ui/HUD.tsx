@@ -19,6 +19,11 @@ interface HUDProps {
   onOpenRules: () => void;
 }
 
+/**
+ * HUD: Top bar with game status and controls.
+ * - Shows turn, player, actions, deployments, timers, and mode.
+ * - Exposes controls for Rules, Music toggle, Leave Game, and End Turn.
+ */
 export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRemaining, actionMode, freeDeploymentsRemaining, winner, gameId, inactivityRemaining, disconnectGraceRemaining, onEndTurn, onLeaveGame, isTurnBlocked, musicEnabled, onToggleMusic, onOpenRules }) => {
   
   const hudStyle: React.CSSProperties = {

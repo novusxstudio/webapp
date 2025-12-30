@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { socket } from './socket';
 
+/**
+ * WaitingRoom: Shows the game ID and waits for Player 1.
+ * - Listens for `GAME_JOINED` to transition into the game view.
+ * - Displays status updates and preserves any state/token from server.
+ */
 export const WaitingRoom: React.FC = () => {
   const [gameId] = useState<string>(() => localStorage.getItem('novusx.gameId') || '');
   const [status, setStatus] = useState<string>('Waiting for player to join...');

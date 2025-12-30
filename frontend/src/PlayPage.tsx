@@ -15,9 +15,17 @@ const actions: React.CSSProperties = { display: 'flex', gap: '12px', justifyCont
 const card: React.CSSProperties = { padding: '16px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.08)' };
 const page: React.CSSProperties = { padding: '20px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '16px', boxShadow: '0 6px 10px rgba(0, 0, 0, 0.08)' };
 
+/**
+ * PlayPage: Entry point to start playing.
+ * - Creates a new game and navigates to the waiting room.
+ * - Offers navigation to Join and Bot challenge pages.
+ */
 export const PlayPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * navigateToWaiting: Persist session and go to waiting room for Player 1.
+   */
   const navigateToWaiting = (resp: CreateGameResponse) => {
     localStorage.setItem('novusx.gameId', resp.gameId);
     localStorage.setItem('novusx.playerId', String(resp.playerId));
@@ -26,6 +34,9 @@ export const PlayPage: React.FC = () => {
     window.location.hash = '#/waiting';
   };
 
+  /**
+   * createGame: Emit `CREATE_GAME` and handle response/errors.
+   */
   const createGame = () => {
     setError(null);
     socket.emit('CREATE_GAME', null, (resp: CreateGameResponse) => {

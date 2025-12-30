@@ -16,6 +16,11 @@ const options: Array<'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Arche
   'Archer',
 ];
 
+/**
+ * UnitPicker: Lists deployable unit types and shows stats/matchups.
+ * - Allows selecting a unit type or None (exit deploy mode).
+ * - Disables interactions on opponent's turn.
+ */
 export const UnitPicker: React.FC<UnitPickerProps> = ({ selected, onSelect, disabled = false }) => {
   const container: React.CSSProperties = {
     display: 'flex',

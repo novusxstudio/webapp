@@ -6,6 +6,11 @@ interface UnitStatsPanelProps {
   unit: Unit | null;
 }
 
+/**
+ * UnitStatsPanel: Displays details for the currently selected unit.
+ * - Shows type, owner, move/attack ranges, and matchup info.
+ * - Renders a placeholder when no unit is selected.
+ */
 export const UnitStatsPanel: React.FC<UnitStatsPanelProps> = ({ unit }) => {
   const panelStyle: React.CSSProperties = {
     backgroundColor: '#f3f4f6',

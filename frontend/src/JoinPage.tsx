@@ -14,6 +14,11 @@ const listItem: React.CSSProperties = { display: 'flex', justifyContent: 'space-
 const card: React.CSSProperties = { padding: '16px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.08)' };
 const page: React.CSSProperties = { padding: '20px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '16px', boxShadow: '0 6px 10px rgba(0, 0, 0, 0.08)' };
 
+/**
+ * JoinPage: Lists joinable games and lets a player join by ID.
+ * - Subscribes to `AVAILABLE_GAMES` and `ERROR`.
+ * - Provides join-by-id and quick-join buttons.
+ */
 export const JoinPage: React.FC = () => {
   const [joinId, setJoinId] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +33,9 @@ export const JoinPage: React.FC = () => {
     return () => { socket.off('ERROR', onError); socket.off('AVAILABLE_GAMES', onAvailable); };
   }, []);
 
+  /**
+   * navigateToGame: Persist session info and navigate to the game view.
+   */
   const navigateToGame = (resp: JoinGameResponse) => {
     localStorage.setItem('novusx.gameId', resp.gameId);
     localStorage.setItem('novusx.playerId', String(resp.playerId));
@@ -36,6 +44,9 @@ export const JoinPage: React.FC = () => {
     window.location.hash = '#/game';
   };
 
+  /**
+   * joinById: Emit `JOIN_GAME` and handle response/errors.
+   */
   const joinById = (id: string) => {
     setError(null);
     socket.emit('JOIN_GAME', { gameId: id }, (resp: JoinGameResponse) => {

@@ -226,12 +226,34 @@ export function canRotate(state: GameState, unitId: string, targetPos: Position)
   if (targetUnit.ownerId !== state.currentPlayer) {
     return false;
   }
-  
-  // Units must be orthogonally adjacent (distance === 1)
-  const distance = getDistance(sourcePos, targetPos);
-  if (distance !== 1) {
+  // Disable rotation between units of the same type
+  if (sourceUnit.stats.type === targetUnit.stats.type) {
     return false;
   }
+  
+  const distance = getDistance(sourcePos, targetPos);
+  const dx = Math.abs(targetPos.col - sourcePos.col);
+  const dy = Math.abs(targetPos.row - sourcePos.row);
+  const isDiagonal = dx === 1 && dy === 1;
+  // Allow orthogonal adjacency for all
+  if (distance === 1) {
+    return true;
+  }
+  // Allow diagonal adjacency only for Cavalry
+  if (isDiagonal && sourceUnit.stats.type === 'Cavalry') {
+    return true;
+  }
+  // Cavalry long rotation: two tiles orthogonally with empty middle
+  if (sourceUnit.stats.type === 'Cavalry' && ((dx === 2 && dy === 0) || (dx === 0 && dy === 2))) {
+    const midPos: Position = {
+      row: dy === 0 ? sourcePos.row : (sourcePos.row + targetPos.row) / 2,
+      col: dx === 0 ? sourcePos.col : (sourcePos.col + targetPos.col) / 2,
+    };
+    const midTile = state.grid[midPos.row - 1][midPos.col - 1];
+    if (midTile.unit !== null) return false;
+    return true;
+  }
+  return false;
   
   return true;
 }
@@ -319,35 +341,58 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
   // Get target unit
   const targetTile = state.grid[targetPos.row - 1][targetPos.col - 1];
   const targetUnit = targetTile.unit!;
-  
-  // Swap positions
-  const newGrid = state.grid.map((row, rowIndex) => {
-    if (rowIndex === sourcePos!.row - 1 || rowIndex === targetPos.row - 1) {
-      return row.map((tile, colIndex) => {
-        if (rowIndex === sourcePos!.row - 1 && colIndex === sourcePos!.col - 1) {
-          // Place target unit at source position
-          return {
-            ...tile,
-            unit: {
-              ...targetUnit,
-              position: { row: sourcePos!.row, col: sourcePos!.col },
-            }
-          };
-        } else if (rowIndex === targetPos.row - 1 && colIndex === targetPos.col - 1) {
-          // Place source unit at target position
-          return {
-            ...tile,
-            unit: {
-              ...sourceUnit!,
-              position: { row: targetPos.row, col: targetPos.col },
-            }
-          };
-        }
-        return tile;
-      });
-    }
-    return row;
-  });
+  const dx = Math.abs(targetPos.col - sourcePos!.col);
+  const dy = Math.abs(targetPos.row - sourcePos!.row);
+  const isDiagonal = dx === 1 && dy === 1;
+  const isAdj = dx + dy === 1;
+  let newGrid: GameState['grid'];
+  if (isAdj || isDiagonal) {
+    // Simple swap for adjacency or diagonal cavalry swap
+    newGrid = state.grid.map((row, rowIndex) => {
+      if (rowIndex === sourcePos!.row - 1 || rowIndex === targetPos.row - 1) {
+        return row.map((tile, colIndex) => {
+          if (rowIndex === sourcePos!.row - 1 && colIndex === sourcePos!.col - 1) {
+            return {
+              ...tile,
+              unit: { ...targetUnit, position: { row: sourcePos!.row, col: sourcePos!.col } }
+            };
+          }
+          if (rowIndex === targetPos.row - 1 && colIndex === targetPos.col - 1) {
+            return {
+              ...tile,
+              unit: { ...sourceUnit!, position: { row: targetPos.row, col: targetPos.col } }
+            };
+          }
+          return tile;
+        });
+      }
+      return row;
+    });
+  } else if ((dx === 2 && dy === 0) || (dx === 0 && dy === 2)) {
+    // Cavalry long rotation: cavalry -> target; target -> middle; source becomes empty
+    const midPos: Position = {
+      row: dy === 0 ? sourcePos!.row : (sourcePos!.row + targetPos.row) / 2,
+      col: dx === 0 ? sourcePos!.col : (sourcePos!.col + targetPos.col) / 2,
+    };
+    newGrid = state.grid.map((row, rowIndex) => row.map((tile, colIndex) => {
+      const here: Position = { row: rowIndex + 1, col: colIndex + 1 };
+      if (here.row === sourcePos!.row && here.col === sourcePos!.col) {
+        // Source becomes empty
+        return { ...tile, unit: null };
+      }
+      if (here.row === midPos.row && here.col === midPos.col) {
+        // Middle gets the target unit
+        return { ...tile, unit: { ...targetUnit, position: { row: midPos.row, col: midPos.col } } };
+      }
+      if (here.row === targetPos.row && here.col === targetPos.col) {
+        // Target gets the cavalry
+        return { ...tile, unit: { ...sourceUnit!, position: { row: targetPos.row, col: targetPos.col } } };
+      }
+      return tile;
+    }));
+  } else {
+    throw new Error('Rotate not allowed');
+  }
   
   return {
     ...state,
@@ -472,13 +517,11 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
       if (!hasLineOfSight(state, attackerPos, targetPos)) {
         throw new Error('Line of sight is blocked for Archer');
       }
-      // Exceptions: Shieldman and Swordsman do not die to Archer at range
-      if (dType === 'Shieldman' || dType === 'Swordsman') {
-        // No removals: shield or sword defense blocks the ranged shot
+      // Archers can now kill Swordsmen at range; Shieldmen remain immune
+      if (dType === 'Shieldman') {
         removeAttacker = false;
         removeDefender = false;
       } else {
-        // Archers kill at range against other types
         removeDefender = true;
       }
     }
@@ -550,8 +593,8 @@ export function canAttack(state: GameState, attackerId: string, targetPos: Posit
       // Archers can engage at close range but will lose; allow selection
       return true;
     }
-    // Prevent ranged targeting of Shieldman and Swordsman entirely
-    if (defender.stats.type === 'Shieldman' || defender.stats.type === 'Swordsman') {
+    // Prevent ranged targeting of Shieldman entirely; allow Swordsman
+    if (defender.stats.type === 'Shieldman') {
       return false;
     }
     // Require line-of-sight for ranged shots

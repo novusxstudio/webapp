@@ -28,6 +28,11 @@ const pageStyle: React.CSSProperties = {
   boxShadow: '0 6px 10px rgba(0, 0, 0, 0.08)'
 };
 
+/**
+ * LobbyPage: Entry screen for players.
+ * - Opens the Rules modal for quick reference.
+ * - Navigates to Play to create/join/challenge a bot.
+ */
 export const LobbyPage: React.FC = () => {
   const [isRulesOpen, setIsRulesOpen] = useState<boolean>(false);
 
@@ -39,7 +44,9 @@ export const LobbyPage: React.FC = () => {
         </div>
         <div style={cardStyle}>
           <div style={actionsStyle}>
+            {/** Open the rules modal */}
             <button style={buttonStyle} onClick={() => setIsRulesOpen(true)}>Rules</button>
+            {/** Navigate to the Play page to start or join games */}
             <button style={buttonStyle} onClick={() => window.location.hash = '#/play'}>Play Game</button>
           </div>
         </div>

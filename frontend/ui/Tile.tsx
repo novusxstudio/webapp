@@ -15,6 +15,11 @@ interface TileProps {
   onClick?: () => void;
 }
 
+/**
+ * Tile: Renders a single board tile with visual state.
+ * - Highlights control points, move/attack/rotate targets, and occupancy.
+ * - Forwards clicks to parent handlers.
+ */
 export const Tile: React.FC<TileProps> = ({ isControlPoint, controlPointOwner, isHighlighted, isAttackTarget, isRotateTarget, unit, tileSize, unitSize, onClick }) => {
   let borderColor = '#333';
   let backgroundColor = '#f0f0f0';
@@ -68,6 +73,7 @@ export const Tile: React.FC<TileProps> = ({ isControlPoint, controlPointOwner, i
   );
 };
 
+/** Small marker for control point tiles (centered dot). */
 const controlPointStyle: React.CSSProperties = {
   width: '12px',
   height: '12px',

@@ -4,6 +4,10 @@ interface RulesModalProps {
   onClose: () => void;
 }
 
+/**
+ * RulesModal: Overlay with a concise summary of game rules.
+ * - Blocks interaction behind it and closes via the provided handler.
+ */
 export const RulesModal: React.FC<RulesModalProps> = ({ onClose }) => {
   const overlayStyle: React.CSSProperties = {
     position: 'fixed',

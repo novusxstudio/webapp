@@ -11,6 +11,12 @@ import { controlsAllPoints } from './game/rules';
 import bgImage from './assets/background/Gemini_Generated_Image_u709ybu709ybu709.png';
 import { socket } from './socket';
 
+/**
+ * App: Main game container.
+ * - Subscribes to server state/events and persists session data.
+ * - Sends player actions to the backend and renders the board/HUD.
+ * - Manages UI selections, timers, music, and rules modal.
+ */
 function App() {
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
@@ -33,6 +39,7 @@ function App() {
   const gameId = useMemo(() => localStorage.getItem('novusx.gameId') || '', []);
   const playerId = useMemo(() => Number(localStorage.getItem('novusx.playerId') ?? '-1'), []);
   const reconnectToken = useMemo(() => localStorage.getItem('novusx.reconnectToken') || '', []);
+  // Subscribe to server events and keep local state in sync
   useEffect(() => {
     if (!gameId) {
       window.location.hash = '#/lobby';
@@ -127,7 +134,9 @@ function App() {
     setSelectedDeployUnitType(null);
   }, [gameState?.currentPlayer, gameState?.turnNumber]);
 
-  // Manual end-turn: send intent to server
+  /**
+   * endTurnManually: Emit `END_TURN` when it's my turn and clear selections.
+   */
   const endTurnManually = () => {
     if (winner !== null) return;
     if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
@@ -138,10 +147,16 @@ function App() {
     setSelectedDeployUnitType(null);
   };
 
+  /**
+   * toggleMusic: Enable/disable background music.
+   */
   const toggleMusic = () => {
     setMusicEnabled((prev) => !prev);
   };
 
+  /**
+   * leaveGame: Emit `LEAVE_GAME`, clear session storage, and return to lobby.
+   */
   const leaveGame = () => {
     socket.emit('LEAVE_GAME', { gameId });
     // Navigate back to lobby; other player will receive winner update
@@ -153,14 +168,23 @@ function App() {
     window.location.hash = '#/lobby';
   };
 
+  /**
+   * openRules: Show the rules modal.
+   */
   const openRules = () => {
     setIsRulesOpen(true);
   };
 
+  /**
+   * closeRules: Hide the rules modal.
+   */
   const closeRules = () => {
     setIsRulesOpen(false);
   };
 
+  /**
+   * handleMove: Request a unit move and clear selections.
+   */
   const handleMove = (unitId: string, target: Position) => {
     if (winner !== null) return;
     if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
@@ -169,6 +193,9 @@ function App() {
     setSelectedDeployUnitType(null);
   };
 
+  /**
+   * handleAttack: Request an attack from the selected unit.
+   */
   const handleAttack = (attackerId: string, targetPos: Position) => {
     if (winner !== null) return;
     if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
@@ -177,6 +204,9 @@ function App() {
     setSelectedDeployUnitType(null);
   };
 
+  /**
+   * handleSelectUnit: Select/deselect a unit; blocks selecting enemy units.
+   */
   const handleSelectUnit = (unit: Unit | null) => {
     // Allow selection even when it's not my turn (for viewing stats), but disallow selecting enemy units
     if (unit) {
@@ -192,6 +222,9 @@ function App() {
     }
   };
 
+  /**
+   * handleRotate: Request a rotate/swap action for the selected unit.
+   */
   const handleRotate = (unitId: string, targetPos: Position) => {
     if (winner !== null) return;
     if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
@@ -201,6 +234,9 @@ function App() {
     setSelectedDeployUnitType(null);
   };
 
+  /**
+   * handleDeploy: Request unit deployment to a valid tile.
+   */
   const handleDeploy = (unitType: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer', targetPos: Position) => {
     if (winner !== null) return;
     if (!(gameState && playerId !== -1 && gameState.currentPlayer === playerId)) return;
@@ -210,7 +246,9 @@ function App() {
   const inactivityRemaining = inactivityInfo ? Math.max(0, Math.ceil((inactivityInfo.deadline - nowTick) / 1000)) : null;
   const disconnectGraceRemaining = disconnectGrace ? Math.max(0, Math.ceil((disconnectGrace.deadline - nowTick) / 1000)) : null;
 
-  // Compute action mode
+  /**
+   * getActionMode: Compute UI mode label based on current selection.
+   */
   const getActionMode = (): string => {
     if (selectedUnitId) {
       return 'Unit Action';

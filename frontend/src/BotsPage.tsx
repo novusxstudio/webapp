@@ -12,6 +12,11 @@ const listItem: React.CSSProperties = { display: 'flex', justifyContent: 'space-
 const card: React.CSSProperties = { padding: '16px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.08)' };
 const page: React.CSSProperties = { padding: '20px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '16px', boxShadow: '0 6px 10px rgba(0, 0, 0, 0.08)' };
 
+/**
+ * BotsPage: List available bots and start a bot match.
+ * - Subscribes to `AVAILABLE_BOTS` and displays bot names.
+ * - Emits `CREATE_BOT_GAME` for the selected bot and navigates to game view.
+ */
 export const BotsPage: React.FC = () => {
   const [bots, setBots] = useState<BotInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +33,9 @@ export const BotsPage: React.FC = () => {
     };
   }, []);
 
+  /**
+   * navigateToGame: Persist session info and navigate to the game view.
+   */
   const navigateToGame = (resp: CreateGameResponse) => {
     localStorage.setItem('novusx.gameId', resp.gameId);
     localStorage.setItem('novusx.playerId', String(resp.playerId));
@@ -36,6 +44,9 @@ export const BotsPage: React.FC = () => {
     window.location.hash = '#/game';
   };
 
+  /**
+   * challengeBot: Emit `CREATE_BOT_GAME` for the selected bot and handle response/errors.
+   */
   const challengeBot = (botId: string) => {
     setError(null);
     socket.emit('CREATE_BOT_GAME', { botId }, (resp: CreateGameResponse) => {
