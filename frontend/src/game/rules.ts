@@ -503,6 +503,11 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
   const aType = attacker.stats.type;
   const dType = defender.stats.type;
 
+  // Disallow Shieldman vs Cavalry attacks entirely
+  if ((aType === 'Shieldman' && dType === 'Cavalry') || (aType === 'Cavalry' && dType === 'Shieldman')) {
+    throw new Error('Invalid matchup: Shieldman and Cavalry cannot attack each other');
+  }
+
   // Archer vs Archer: both removed
   let removeAttacker = false;
   let removeDefender = false;
@@ -513,6 +518,18 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
   } else if (aType === 'Spearman' && dType === 'Archer' && isCloseRange(attackerPos, targetPos)) {
     // Spearman vs Archer at orthogonal adjacency: Spearman survives; Archer dies
     removeDefender = true;
+  } else if (aType === 'Spearman' && dType === 'Cavalry') {
+    // Spearman vs Cavalry: Spearman survives; Cavalry dies
+    removeDefender = true;
+  } else if (aType === 'Cavalry' && dType === 'Spearman') {
+    // Cavalry attacking Spearman: Cavalry dies, Spearman survives
+    removeAttacker = true;
+  } else if (aType === 'Swordsman' && dType === 'Spearman') {
+    // Swordsman vs Spearman: Swordsman survives; Spearman dies
+    removeDefender = true;
+  } else if (aType === 'Spearman' && dType === 'Swordsman') {
+    // Spearman attacking Swordsman: Spearman dies, Swordsman survives
+    removeAttacker = true;
   } else if (aType === 'Archer' && dType === 'Archer') {
     removeAttacker = true;
     removeDefender = true;
@@ -592,6 +609,12 @@ export function canAttack(state: GameState, attackerId: string, targetPos: Posit
   if (!tile.unit) return false;
   const defender = tile.unit;
   if (defender.ownerId === attacker.ownerId) return false;
+
+  // Disallow Shieldman vs Cavalry attacks entirely (both directions)
+  if ((attacker.stats.type === 'Shieldman' && defender.stats.type === 'Cavalry') ||
+      (attacker.stats.type === 'Cavalry' && defender.stats.type === 'Shieldman')) {
+    return false;
+  }
 
   const distance = getDistance(attackerPos, targetPos);
   if (distance > attacker.stats.attackRange) return false;

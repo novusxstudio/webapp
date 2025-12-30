@@ -279,6 +279,10 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
   const distance = getDistance(attackerPos, targetPos);
   if (distance > attacker.stats.attackRange) throw new Error(`Attack distance ${distance} exceeds unit's attackRange ${attacker.stats.attackRange}`);
   const aType = attacker.stats.type; const dType = defender.stats.type;
+  // Disallow Shieldman vs Cavalry attacks entirely
+  if ((aType === 'Shieldman' && dType === 'Cavalry') || (aType === 'Cavalry' && dType === 'Shieldman')) {
+    throw new Error('Invalid matchup: Shieldman and Cavalry cannot attack each other');
+  }
   let removeAttacker = false; let removeDefender = false;
   // Special-case: Cavalry vs Archer at orthogonal adjacency -> Cavalry survives, Archer dies
   if (aType === 'Cavalry' && dType === 'Archer' && isCloseRange(attackerPos, targetPos)) {
@@ -287,6 +291,20 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
   // Special-case: Spearman vs Archer at orthogonal adjacency -> Spearman survives, Archer dies
   else if (aType === 'Spearman' && dType === 'Archer' && isCloseRange(attackerPos, targetPos)) {
     removeDefender = true;
+  }
+  // Special-case: Spearman vs Cavalry -> Spearman survives, Cavalry dies (regardless of who attacks)
+  else if (aType === 'Spearman' && dType === 'Cavalry') {
+    removeDefender = true;
+  }
+  else if (aType === 'Cavalry' && dType === 'Spearman') {
+    removeAttacker = true;
+  }
+  // Special-case: Swordsman vs Spearman -> Swordsman survives, Spearman dies (regardless of who attacks)
+  else if (aType === 'Swordsman' && dType === 'Spearman') {
+    removeDefender = true;
+  }
+  else if (aType === 'Spearman' && dType === 'Swordsman') {
+    removeAttacker = true;
   }
   else if (aType === 'Archer' && dType === 'Archer') { removeAttacker = true; removeDefender = true; }
   else if (aType === 'Archer') {
@@ -327,6 +345,11 @@ export function canAttack(state: GameState, attackerId: string, targetPos: Posit
   if (!attacker || !attackerPos) return false;
   const tile = state.grid[targetPos.row - 1][targetPos.col - 1]; if (!tile.unit) return false;
   const defender = tile.unit; if (defender.ownerId === attacker.ownerId) return false;
+  // Disallow Shieldman vs Cavalry attacks entirely (both directions)
+  if ((attacker.stats.type === 'Shieldman' && defender.stats.type === 'Cavalry') ||
+      (attacker.stats.type === 'Cavalry' && defender.stats.type === 'Shieldman')) {
+    return false;
+  }
   const distance = getDistance(attackerPos, targetPos); if (distance > attacker.stats.attackRange) return false;
   if (attacker.stats.type === 'Archer') {
     if (isCloseRange(attackerPos, targetPos)) return true;
