@@ -6,21 +6,29 @@ interface UnitProps {
   unitSize: number;
 }
 
+/**
+ * Unit: Displays a unit card image with owner-colored border.
+ * - Derives image path and fallback abbreviation from `unitId`.
+ * - Shows a text fallback when the image fails to load.
+ */
 export const Unit: React.FC<UnitProps> = ({ unitId, ownerId, unitSize }) => {
   const [imageError, setImageError] = useState(false);
 
+  /** Extract the unit type from its id string. */
   const getUnitType = (id: string): string => {
     // Remove player prefix and timestamp if present (e.g., "p0-spearman-123" -> "spearman")
     const parts = id.split('-');
     return parts[1] || parts[0];
   };
 
+  /** Resolve the image path for the given unit type. */
   const getImagePath = (unitType: string): string => {
     // Convert to lowercase and remove spaces for filename
     const filename = unitType.toLowerCase().replace(/\s+/g, '');
     return `/src/assets/cards/${filename}.png`;
   };
 
+  /** Provide a short text abbreviation used as a fallback label. */
   const getUnitAbbreviation = (id: string): string => {
     const unitType = getUnitType(id);
     
@@ -29,10 +37,7 @@ export const Unit: React.FC<UnitProps> = ({ unitId, ownerId, unitSize }) => {
       swordsman: 'SW',
       archer: 'AR',
       shieldman: 'SH',
-      heavyswordsman: 'HS',
-      cannoneer: 'CA',
-      horseman: 'HO',
-      armoredhorseman: 'AH',
+      cavalry: 'CV',
     };
     
     return abbreviations[unitType] || unitType.substring(0, 2).toUpperCase();

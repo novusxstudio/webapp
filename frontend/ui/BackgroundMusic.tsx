@@ -5,10 +5,17 @@ interface BackgroundMusicProps {
   enabled: boolean;
 }
 
+/**
+ * BackgroundMusic: Manages looping background audio.
+ * - Initializes an `<audio>` element once and attempts autoplay.
+ * - Resumes playback on first user interaction if policy blocks autoplay.
+ * - Reacts to `enabled` prop without resetting track position.
+ */
 export const BackgroundMusic: React.FC<BackgroundMusicProps> = ({ enabled }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Initialize audio once and attempt autoplay
+  // Initialize audio and try autoplay; attach interaction fallbacks
   useEffect(() => {
     if (!audioRef.current) {
       const audio = new Audio(bgMusic);
@@ -45,6 +52,7 @@ export const BackgroundMusic: React.FC<BackgroundMusicProps> = ({ enabled }) => 
   }, []);
 
   // React to enabled prop without resetting track position
+  // Toggle play/pause when `enabled` changes
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;

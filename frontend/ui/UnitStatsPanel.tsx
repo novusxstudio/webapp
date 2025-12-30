@@ -1,10 +1,16 @@
 import React from 'react';
 import type { Unit } from '../src/game/GameState';
+import { getMatchupsForType } from '../src/game/rules';
 
 interface UnitStatsPanelProps {
   unit: Unit | null;
 }
 
+/**
+ * UnitStatsPanel: Displays details for the currently selected unit.
+ * - Shows type, owner, move/attack ranges, and matchup info.
+ * - Renders a placeholder when no unit is selected.
+ */
 export const UnitStatsPanel: React.FC<UnitStatsPanelProps> = ({ unit }) => {
   const panelStyle: React.CSSProperties = {
     backgroundColor: '#f3f4f6',
@@ -77,18 +83,8 @@ export const UnitStatsPanel: React.FC<UnitStatsPanelProps> = ({ unit }) => {
       </div>
 
       <div style={statRowStyle}>
-        <span style={statLabelStyle}>ATK:</span>
-        <span style={statValueStyle}>{unit.stats.atk}</span>
-      </div>
-
-      <div style={statRowStyle}>
-        <span style={statLabelStyle}>DEF:</span>
-        <span style={statValueStyle}>{unit.stats.def}</span>
-      </div>
-
-      <div style={statRowStyle}>
-        <span style={statLabelStyle}>HP:</span>
-        <span style={statValueStyle}>{unit.stats.hp} / {unit.stats.maxHp}</span>
+        <span style={statLabelStyle}>Type:</span>
+        <span style={statValueStyle}>{unit.stats.type}</span>
       </div>
 
       <div style={statRowStyle}>
@@ -101,10 +97,21 @@ export const UnitStatsPanel: React.FC<UnitStatsPanelProps> = ({ unit }) => {
         <span style={statValueStyle}>{unit.stats.attackRange}</span>
       </div>
 
-      <div style={statRowStyle}>
-        <span style={statLabelStyle}>Cost:</span>
-        <span style={statValueStyle}>{unit.stats.cost}</span>
-      </div>
+      {(() => {
+        const match = getMatchupsForType(unit.stats.type);
+        return (
+          <>
+            <div style={statRowStyle}>
+              <span style={statLabelStyle}>Beats:</span>
+              <span style={statValueStyle}>{match.beats.join(', ') || '—'}</span>
+            </div>
+            <div style={statRowStyle}>
+              <span style={statLabelStyle}>Dies To:</span>
+              <span style={statValueStyle}>{match.diesTo.join(', ') || '—'}</span>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 };

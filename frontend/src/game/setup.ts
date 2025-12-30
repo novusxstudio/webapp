@@ -11,8 +11,5 @@ export function createInitialGrid(): Tile[][] {
     }
     grid.push(rowTiles);
   }
-
-  // No starting units; board begins empty
-
   return grid;
 }

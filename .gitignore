@@ -1,0 +1,67 @@
+# Root .gitignore for webapp repo
+
+# Node / Vite / TypeScript
+node_modules/
+**/node_modules/
+dist/
+build/
+.out/
+.vite/
+.cache/
+coverage/
+.eslintcache
+
+# Logs
+logs/
+**/logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.history/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python (venv and caches)
+venv/
+.venv/
+env/
+.envs/
+**/venv/
+**/.venv/
+**/env/
+**/.envs/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Build artifacts (generic)
+*.cache
+*.tmp
+.tmp/
+
+# Misc
+.sass-cache/
+
+# Frontend specific
+frontend/.vite/
+frontend/dist/
+frontend/node_modules/
+
+# Backend specific
+backend/dist/
+backend/node_modules/
