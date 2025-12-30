@@ -6,8 +6,7 @@ import { UnitStatsPanel } from '../ui/UnitStatsPanel';
 import { HUD } from '../ui/HUD';
 import { BackgroundMusic } from '../ui/BackgroundMusic';
 import { RulesModal } from '../ui/RulesModal';
-import type { GameState, Tile, Unit, Player, Position } from './game/GameState';
-import { controlsAllPoints } from './game/rules';
+import type { GameState, Unit, Position } from './game/GameState';
 import bgImage from './assets/background/Gemini_Generated_Image_u709ybu709ybu709.png';
 import { socket } from './socket';
 
@@ -26,6 +25,10 @@ function App() {
   const [nowTick, setNowTick] = useState<number>(Date.now());
   const [musicEnabled, setMusicEnabled] = useState<boolean>(true);
   const [isRulesOpen, setIsRulesOpen] = useState<boolean>(false);
+  const [rematchOfferGameId, setRematchOfferGameId] = useState<string | null>(null);
+  const [rematchRequested, setRematchRequested] = useState<boolean>(false);
+  const [rematchUnavailable, setRematchUnavailable] = useState<boolean>(false);
+  const [isSurrendered, setIsSurrendered] = useState<boolean>(false);
   
   // Simplified: no local game mutations; state is authoritative from server
   const [selectedDeployUnitType, setSelectedDeployUnitType] = useState<'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer' | null>(null);
@@ -71,6 +74,9 @@ function App() {
     };
     const onForfeit = (payload: { gameId: string; reason: string }) => {
       if (payload?.gameId === gameId) {
+        if (payload.reason === 'surrender') {
+          setIsSurrendered(true);
+        }
         console.warn('Opponent forfeited:', payload.reason);
       }
     };
@@ -79,6 +85,38 @@ function App() {
     socket.on('GAME_CONCLUDED', onConcluded);
     socket.on('OPPONENT_DISCONNECTED', onOpponentDisc);
     socket.on('PLAYER_FORFEIT', onForfeit);
+    // Rematch offer from opponent
+    socket.on('REMATCH_OFFER', (payload: { oldGameId: string }) => {
+      // Store offer and present UI controls; do not auto-decline
+      setRematchOfferGameId(payload.oldGameId);
+    });
+    // Acknowledgement that our rematch request was sent
+    socket.on('REMATCH_REQUESTED', () => {
+      setRematchRequested(true);
+      setRematchUnavailable(false);
+    });
+    // Rematch started: set session and reload into new game
+    socket.on('REMATCH_STARTED', (resp: { gameId: string; playerId: number; state: GameState; reconnectToken: string }) => {
+      try {
+        localStorage.setItem('novusx.gameId', resp.gameId);
+        localStorage.setItem('novusx.playerId', String(resp.playerId));
+        localStorage.setItem('novusx.reconnectToken', resp.reconnectToken);
+        localStorage.setItem('novusx.state', JSON.stringify(resp.state));
+      } catch {}
+      // Force a reload to reinitialize App with the new gameId
+      window.location.hash = '#/game';
+      window.location.reload();
+    });
+    socket.on('REMATCH_DECLINED', () => {
+      // Optional feedback; keep non-blocking
+      console.warn('Rematch declined.');
+      setRematchRequested(false);
+    });
+    socket.on('REMATCH_UNAVAILABLE', () => {
+      // Opponent disconnected or offer already pending; disable offer button
+      setRematchUnavailable(true);
+      setRematchRequested(false);
+    });
     socket.on('RESUME_GAME', (payload: { gameId: string; state: GameState }) => {
       if (payload?.gameId === gameId) {
         setGameState(payload.state);
@@ -108,6 +146,11 @@ function App() {
       socket.off('GAME_CONCLUDED', onConcluded);
       socket.off('OPPONENT_DISCONNECTED', onOpponentDisc);
       socket.off('PLAYER_FORFEIT', onForfeit);
+      socket.off('REMATCH_OFFER');
+      socket.off('REMATCH_REQUESTED');
+      socket.off('REMATCH_STARTED');
+      socket.off('REMATCH_UNAVAILABLE');
+      socket.off('REMATCH_DECLINED');
       socket.off('INACTIVITY_TIMER_START');
       socket.off('INACTIVITY_TIMER_CANCEL');
       socket.off('DISCONNECT_GRACE_CANCEL');
@@ -129,9 +172,11 @@ function App() {
     return () => clearInterval(id);
   }, []);
 
-  // Reset UnitPicker to None at the beginning of each player's turn
+  // Reset selections at the start of each turn
   useEffect(() => {
     setSelectedDeployUnitType(null);
+    setSelectedUnitId(null);
+    setSelectedUnit(null);
   }, [gameState?.currentPlayer, gameState?.turnNumber]);
 
   /**
@@ -270,43 +315,7 @@ function App() {
     backgroundAttachment: 'fixed',
   };
 
-  // Full-screen background and overlay styles
-  const backgroundRootStyle: React.CSSProperties = {
-    position: 'relative',
-    width: '100vw',
-    height: '100vh',
-    overflow: 'hidden',
-  };
-
-  const backgroundImageStyle: React.CSSProperties = {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100vw',
-    height: '100vh',
-    backgroundImage: 'url(/src/assets/background/Gemini_Generated_Image_u709ybu709ybu709.png)',
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    backgroundRepeat: 'no-repeat',
-    zIndex: 0,
-    pointerEvents: 'none',
-  };
-
-  const backgroundOverlayStyle: React.CSSProperties = {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100vw',
-    height: '100vh',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    zIndex: 1,
-    pointerEvents: 'none',
-  };
-
-  const gameContainerStyle: React.CSSProperties = {
-    position: 'relative',
-    zIndex: 2,
-  };
+  // Full-screen background and overlay styles (unused styles removed)
 
   const contentStyle: React.CSSProperties = {
     display: 'flex',
@@ -344,15 +353,73 @@ function App() {
         musicEnabled={musicEnabled}
         onToggleMusic={toggleMusic}
         onOpenRules={openRules}
+        onSurrender={() => socket.emit('SURRENDER', { gameId })}
       />)}
       {isRulesOpen && (
         <RulesModal onClose={closeRules} />
       )}
       {gameState && winner !== null && (
         <div style={winnerMessageStyle}>
-          Player {winner} Wins!
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <span>Player {winner} Wins!{isSurrendered ? ' (win by surrender)' : ''}</span>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => {
+                  // Offer rematch to opponent for this finished game
+                  socket.emit('REQUEST_REMATCH', { oldGameId: gameId });
+                }}
+                disabled={rematchRequested || !!rematchOfferGameId || rematchUnavailable}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: `1px solid ${(rematchRequested || rematchOfferGameId || rematchUnavailable) ? '#d1d5db' : '#2563eb'}`,
+                  background: (rematchRequested || rematchOfferGameId || rematchUnavailable) ? '#f3f4f6' : '#dbeafe',
+                  color: (rematchRequested || rematchOfferGameId || rematchUnavailable) ? '#9ca3af' : '#1d4ed8',
+                  cursor: (rematchRequested || rematchOfferGameId || rematchUnavailable) ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {rematchUnavailable ? 'Opponent offline' : rematchRequested ? 'Rematch offered…' : (rematchOfferGameId ? 'Rematch pending…' : 'Offer Rematch')}
+              </button>
+              <button
+                onClick={() => {
+                  // Return to lobby; keep game concluded state
+                  window.location.hash = '#/lobby';
+                }}
+                style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #374151', background: '#f3f4f6', color: '#374151', cursor: 'pointer' }}
+              >
+                Back to Lobby
+              </button>
+            </div>
+          </div>
         </div>
       )}
+        {rematchOfferGameId && (
+          <div style={{ marginTop: '12px', padding: '12px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontWeight: 'bold' }}>Opponent offered a rematch.</span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => {
+                    socket.emit('ACCEPT_REMATCH', { oldGameId: rematchOfferGameId });
+                    setRematchOfferGameId(null);
+                  }}
+                  style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #059669', background: '#d1fae5', color: '#065f46', cursor: 'pointer' }}
+                >
+                  Accept
+                </button>
+                <button
+                  onClick={() => {
+                    socket.emit('DECLINE_REMATCH', { oldGameId: rematchOfferGameId });
+                    setRematchOfferGameId(null);
+                  }}
+                  style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #b91c1c', background: '#fee2e2', color: '#7f1d1d', cursor: 'pointer' }}
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       <div style={contentStyle}>
         <UnitPicker
           selected={selectedDeployUnitType}

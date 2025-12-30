@@ -4,6 +4,10 @@ import type { PlayerId, PlayerAction, CreateGameResponse, JoinGameRequest, JoinG
 
 export class GameManager {
   private games: Map<string, GameInstance> = new Map();
+  // Recently concluded games kept briefly for rematch handshake
+  private recentGames: Map<string, { p0?: string; p1?: string; expiresAt: number }> = new Map();
+  // Track outstanding rematch offers by old gameId -> requester socketId
+  private rematchOffers: Map<string, string> = new Map();
 
   createGame(socket: Socket): CreateGameResponse {
     const game = new GameInstance();
@@ -81,6 +85,18 @@ export class GameManager {
   endGame(gameId: string) {
     const game = this.games.get(gameId);
     if (game) {
+      // Record participants for rematch window (60s)
+      const p0 = game.getPlayerSocketId(0);
+      const p1 = game.getPlayerSocketId(1);
+      this.recentGames.set(gameId, { p0, p1, expiresAt: Date.now() + 60_000 });
+      // Schedule cleanup
+      setTimeout(() => {
+        const rec = this.recentGames.get(gameId);
+        if (rec && rec.expiresAt <= Date.now()) {
+          this.recentGames.delete(gameId);
+          this.rematchOffers.delete(gameId);
+        }
+      }, 60_000);
       // Cancel any outstanding timers
       game.cancelDisconnectGrace(0);
       game.cancelDisconnectGrace(1);
@@ -92,5 +108,80 @@ export class GameManager {
   static generateToken(): string {
     // Simple random token
     return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  }
+
+  /**
+   * Register a rematch request and notify the opponent. Returns opponent socket id if found.
+   */
+  requestRematch(oldGameId: string, requesterSocketId: string, io: IOServer): string | null {
+    const rec = this.recentGames.get(oldGameId);
+    if (!rec) return null;
+    // If an offer is already pending for this game, disallow new offers
+    if (this.rematchOffers.has(oldGameId)) return null;
+    const isP0 = rec.p0 === requesterSocketId;
+    const isP1 = rec.p1 === requesterSocketId;
+    if (!isP0 && !isP1) return null;
+    const opponent = isP0 ? rec.p1 : rec.p0;
+    if (!opponent) return null;
+    // Opponent must be currently connected
+    const oppSock = io.sockets.sockets.get(opponent);
+    if (!oppSock || oppSock.disconnected) return null;
+    // Record offer
+    this.rematchOffers.set(oldGameId, requesterSocketId);
+    // Notify opponent
+    io.to(opponent).emit('REMATCH_OFFER', { oldGameId });
+    return opponent;
+  }
+
+  /**
+   * Accept a rematch offer; creates a new game with same seats and returns response for each player.
+   */
+  acceptRematch(oldGameId: string, accepterSocketId: string): { p0?: { socketId: string; resp: ReturnType<GameManager['createGame']> }, p1?: { socketId: string; resp: ReturnType<GameManager['createGame']> } } | null {
+    const rec = this.recentGames.get(oldGameId);
+    if (!rec) return null;
+    const offerBy = this.rematchOffers.get(oldGameId);
+    if (!offerBy) return null;
+    const isP0Accepter = rec.p0 === accepterSocketId;
+    const isP1Accepter = rec.p1 === accepterSocketId;
+    if (!isP0Accepter && !isP1Accepter) return null;
+    // Ensure offer/accepter are the two participants
+    const p0Sock = rec.p0;
+    const p1Sock = rec.p1;
+    if (!p0Sock || !p1Sock) return null;
+
+    // Create new game and bind both players to their original seats
+    const game = new GameInstance();
+    this.games.set(game.id, game);
+    // Player 0
+    game.addPlayer(0, p0Sock);
+    game.setReconnectToken(0, GameManager.generateToken());
+    // Player 1
+    game.addPlayer(1, p1Sock);
+    game.setReconnectToken(1, GameManager.generateToken());
+
+    // Prepare responses for both players with correct playerId
+    const p0Resp = { gameId: game.id, playerId: 0 as 0 | 1, state: game.state, reconnectToken: game.getReconnectToken(0)! };
+    const p1Resp = { gameId: game.id, playerId: 1 as 0 | 1, state: game.state, reconnectToken: game.getReconnectToken(1)! };
+
+    // Clear old offer; keep recentGames entry until cleanup timeout to avoid race
+    this.rematchOffers.delete(oldGameId);
+
+    return {
+      p0: { socketId: p0Sock, resp: p0Resp },
+      p1: { socketId: p1Sock, resp: p1Resp },
+    };
+  }
+
+  /**
+   * Decline a rematch; notify requester if present.
+   */
+  declineRematch(oldGameId: string, declinerSocketId: string): string | null {
+    const rec = this.recentGames.get(oldGameId);
+    const offerBy = this.rematchOffers.get(oldGameId);
+    if (!rec || !offerBy) return null;
+    const isParticipant = rec.p0 === declinerSocketId || rec.p1 === declinerSocketId;
+    if (!isParticipant) return null;
+    this.rematchOffers.delete(oldGameId);
+    return offerBy;
   }
 }

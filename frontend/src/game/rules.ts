@@ -449,8 +449,11 @@ const BEATS: Record<Unit['stats']['type'], Unit['stats']['type'][]> = {
   Archer: ['Cavalry', 'Spearman', 'Archer'],
 };
 
+// Close-range is strictly orthogonal adjacency (dx+dy === 1)
 function isCloseRange(a: Position, b: Position): boolean {
-  return getDistance(a, b) === 1;
+  const dx = Math.abs(a.col - b.col);
+  const dy = Math.abs(a.row - b.row);
+  return dx + dy === 1;
 }
 
 export function applyAttack(state: GameState, attackerId: string, targetPos: Position): GameState {
@@ -504,13 +507,19 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
   let removeAttacker = false;
   let removeDefender = false;
 
-  if (aType === 'Archer' && dType === 'Archer') {
+  // Special-case: Cavalry vs Archer at orthogonal adjacency -> Cavalry survives, Archer dies
+  if (aType === 'Cavalry' && dType === 'Archer' && isCloseRange(attackerPos, targetPos)) {
+    removeDefender = true;
+  } else if (aType === 'Spearman' && dType === 'Archer' && isCloseRange(attackerPos, targetPos)) {
+    // Spearman vs Archer at orthogonal adjacency: Spearman survives; Archer dies
+    removeDefender = true;
+  } else if (aType === 'Archer' && dType === 'Archer') {
     removeAttacker = true;
     removeDefender = true;
   } else if (aType === 'Archer') {
     // Archer constraints
     if (isCloseRange(attackerPos, targetPos)) {
-      // Archers always lose in close-range
+      // Archers lose in close-range; Spearman survives
       removeAttacker = true;
     } else {
       // Must have clear line-of-sight to target

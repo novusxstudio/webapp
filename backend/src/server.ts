@@ -225,6 +225,82 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Surrender: current player concedes; opponent wins
+  socket.on('SURRENDER', (payload: { gameId: string }) => {
+    try {
+      const game = manager.getGame(payload.gameId);
+      if (!game) throw new Error('Game not found');
+
+      // Determine playerId from socket mapping
+      let playerId: 0 | 1 | null = null;
+      for (const [pid, sid] of game.players.entries()) {
+        if (sid === socket.id) { playerId = pid; break; }
+      }
+      if (playerId === null) throw new Error('You are not a player in this game');
+
+      const winner: 0 | 1 = playerId === 0 ? 1 : 0;
+      io.to(game.roomName()).emit('GAME_CONCLUDED', { gameId: game.id, winner });
+      // Optionally notify explicit surrender
+      io.to(game.roomName()).emit('PLAYER_FORFEIT', { gameId: game.id, reason: 'surrender' });
+      manager.endGame(game.id);
+      io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+    } catch (err: any) {
+      socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
+    }
+  });
+
+  // Rematch: request from one player, offer to the opponent
+  socket.on('REQUEST_REMATCH', (payload: { oldGameId: string }) => {
+    try {
+      if (!payload?.oldGameId) throw new Error('Missing oldGameId');
+      const opponent = manager.requestRematch(payload.oldGameId, socket.id, io);
+      if (!opponent) {
+        // Explicitly inform requester that rematch is unavailable (e.g., opponent disconnected or pending offer)
+        socket.emit('REMATCH_UNAVAILABLE', { oldGameId: payload.oldGameId, reason: 'unavailable' });
+        return;
+      }
+      // Acknowledge requester that offer was sent
+      socket.emit('REMATCH_REQUESTED', { oldGameId: payload.oldGameId });
+    } catch (err: any) {
+      socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
+    }
+  });
+
+  // Rematch: accept by the other player
+  socket.on('ACCEPT_REMATCH', (payload: { oldGameId: string }) => {
+    try {
+      if (!payload?.oldGameId) throw new Error('Missing oldGameId');
+      const result = manager.acceptRematch(payload.oldGameId, socket.id);
+      if (!result) throw new Error('No rematch offer to accept');
+      // Join both sockets to new room and emit rematch started
+      const game = manager.getGame(result.p0!.resp.gameId)!;
+      const room = game.roomName();
+      const p0Sock = io.sockets.sockets.get(result.p0!.socketId);
+      const p1Sock = io.sockets.sockets.get(result.p1!.socketId);
+      p0Sock?.join(room);
+      p1Sock?.join(room);
+      io.to(result.p0!.socketId).emit('REMATCH_STARTED', result.p0!.resp);
+      io.to(result.p1!.socketId).emit('REMATCH_STARTED', result.p1!.resp);
+      // Broadcast initial state
+      game.broadcastState(io);
+    } catch (err: any) {
+      socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
+    }
+  });
+
+  // Rematch: decline by opponent
+  socket.on('DECLINE_REMATCH', (payload: { oldGameId: string }) => {
+    try {
+      if (!payload?.oldGameId) throw new Error('Missing oldGameId');
+      const requester = manager.declineRematch(payload.oldGameId, socket.id);
+      if (requester) {
+        io.to(requester).emit('REMATCH_DECLINED', { oldGameId: payload.oldGameId });
+      }
+    } catch (err: any) {
+      socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
+    }
+  });
+
   socket.on('disconnect', () => {
     manager.removeSocket(socket, io);
   });

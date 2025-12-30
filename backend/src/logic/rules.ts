@@ -255,7 +255,12 @@ const BEATS: Record<Unit['stats']['type'], Unit['stats']['type'][]> = {
   Archer: ['Cavalry', 'Spearman', 'Archer'],
 };
 
-function isCloseRange(a: Position, b: Position): boolean { return getDistance(a, b) === 1; }
+// Close-range is strictly orthogonal adjacency (dx+dy === 1)
+function isCloseRange(a: Position, b: Position): boolean {
+  const dx = Math.abs(a.col - b.col);
+  const dy = Math.abs(a.row - b.row);
+  return dx + dy === 1;
+}
 
 export function applyAttack(state: GameState, attackerId: string, targetPos: Position): GameState {
   if (state.players[state.currentPlayer].actionsRemaining <= 0) throw new Error('No actions remaining');
@@ -275,12 +280,19 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
   if (distance > attacker.stats.attackRange) throw new Error(`Attack distance ${distance} exceeds unit's attackRange ${attacker.stats.attackRange}`);
   const aType = attacker.stats.type; const dType = defender.stats.type;
   let removeAttacker = false; let removeDefender = false;
-  if (aType === 'Archer' && dType === 'Archer') { removeAttacker = true; removeDefender = true; }
+  // Special-case: Cavalry vs Archer at orthogonal adjacency -> Cavalry survives, Archer dies
+  if (aType === 'Cavalry' && dType === 'Archer' && isCloseRange(attackerPos, targetPos)) {
+    removeDefender = true;
+  }
+  // Special-case: Spearman vs Archer at orthogonal adjacency -> Spearman survives, Archer dies
+  else if (aType === 'Spearman' && dType === 'Archer' && isCloseRange(attackerPos, targetPos)) {
+    removeDefender = true;
+  }
+  else if (aType === 'Archer' && dType === 'Archer') { removeAttacker = true; removeDefender = true; }
   else if (aType === 'Archer') {
     if (isCloseRange(attackerPos, targetPos)) {
-      // Close-range Archer vs Spearman: both removed
+      // Close-range Archer loses to melee; Spearman survives
       removeAttacker = true;
-      if (dType === 'Spearman') { removeDefender = true; }
     }
     else {
       if (!hasLineOfSight(state, attackerPos, targetPos)) throw new Error('Line of sight is blocked for Archer');
