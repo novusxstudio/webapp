@@ -71,7 +71,7 @@ export function applyDeployUnit(state: GameState, unitKey: string, targetPos: Po
   const normalized = normalizeUnitKey(unitKey);
   const unitStats = UNIT_DATA[normalized];
   const unitId = `${state.currentPlayer}-${String(normalized)}-${Date.now()}`;
-  const newUnit: Unit = { id: unitId, ownerId: state.currentPlayer, stats: { ...unitStats }, position: { row: targetPos.row, col: targetPos.col } };
+  const newUnit: Unit = { id: unitId, ownerId: state.currentPlayer, stats: { ...unitStats }, position: { row: targetPos.row, col: targetPos.col }, actedThisTurn: true };
   const newGrid = state.grid.map((row, r) => r === targetPos.row - 1 ? row.map((tile, c) => c === targetPos.col - 1 ? { ...tile, unit: newUnit } : tile) : row);
   return { ...state, grid: newGrid };
 }
@@ -86,6 +86,9 @@ export function canMove(state: GameState, unitId: string, target: Position): boo
     }
   }
   if (!foundUnit || !sourcePos) return false;
+  // Must be current player's unit and must not have acted this turn
+  if (foundUnit.ownerId !== state.currentPlayer) return false;
+  if (foundUnit.actedThisTurn) return false;
   const targetTile = state.grid[target.row - 1][target.col - 1];
   if (targetTile.unit !== null) return false;
   const distance = getDistance(sourcePos, target);
@@ -118,7 +121,7 @@ export function applyMove(state: GameState, unitId: string, target: Position): G
     if (rowIndex === sourcePos!.row - 1 || rowIndex === target.row - 1) {
       return row.map((tile, colIndex) => {
         if (rowIndex === sourcePos!.row - 1 && colIndex === sourcePos!.col - 1) return { ...tile, unit: null };
-        if (rowIndex === target.row - 1 && colIndex === target.col - 1) return { ...tile, unit: { ...foundUnit!, position: { row: target.row, col: target.col }, stats: { ...foundUnit!.stats } } };
+        if (rowIndex === target.row - 1 && colIndex === target.col - 1) return { ...tile, unit: { ...foundUnit!, position: { row: target.row, col: target.col }, stats: { ...foundUnit!.stats }, actedThisTurn: true } };
         return tile;
       });
     }
@@ -137,6 +140,9 @@ export function canRotate(state: GameState, unitId: string, targetPos: Position)
     }
   }
   if (!sourceUnit || !sourcePos) return false;
+  // Must be current player's unit and not have acted already this turn
+  if (sourceUnit.ownerId !== state.currentPlayer) return false;
+  if (sourceUnit.actedThisTurn) return false;
   const targetTile = state.grid[targetPos.row - 1][targetPos.col - 1];
   if (targetTile.unit === null) return false;
   const targetUnit = targetTile.unit;
@@ -186,8 +192,8 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
     newGrid = state.grid.map((row, rowIndex) => {
       if (rowIndex === sourcePos!.row - 1 || rowIndex === targetPos.row - 1) {
         return row.map((tile, colIndex) => {
-          if (rowIndex === sourcePos!.row - 1 && colIndex === sourcePos!.col - 1) return { ...tile, unit: { ...targetUnit, position: { row: sourcePos!.row, col: sourcePos!.col } } };
-          if (rowIndex === targetPos.row - 1 && colIndex === targetPos.col - 1) return { ...tile, unit: { ...sourceUnit!, position: { row: targetPos.row, col: targetPos.col } } };
+          if (rowIndex === sourcePos!.row - 1 && colIndex === sourcePos!.col - 1) return { ...tile, unit: { ...targetUnit, position: { row: sourcePos!.row, col: sourcePos!.col }, actedThisTurn: true } };
+          if (rowIndex === targetPos.row - 1 && colIndex === targetPos.col - 1) return { ...tile, unit: { ...sourceUnit!, position: { row: targetPos.row, col: targetPos.col }, actedThisTurn: true } };
           return tile;
         });
       }
@@ -206,12 +212,12 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
         return { ...tile, unit: null };
       }
       if (here.row === midPos.row && here.col === midPos.col) {
-        // Middle gets the target unit
-        return { ...tile, unit: { ...targetUnit, position: { row: midPos.row, col: midPos.col } } };
+        // Middle gets the target unit, mark as acted
+        return { ...tile, unit: { ...targetUnit, position: { row: midPos.row, col: midPos.col }, actedThisTurn: true } };
       }
       if (here.row === targetPos.row && here.col === targetPos.col) {
-        // Target gets the cavalry
-        return { ...tile, unit: { ...sourceUnit!, position: { row: targetPos.row, col: targetPos.col } } };
+        // Target gets the cavalry, mark as acted
+        return { ...tile, unit: { ...sourceUnit!, position: { row: targetPos.row, col: targetPos.col }, actedThisTurn: true } };
       }
       return tile;
     }));
@@ -272,6 +278,9 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
     }
   }
   if (!attacker || !attackerPos) throw new Error(`Attacker with id ${attackerId} not found`);
+  // Must be current player's unit and must not have acted this turn
+  if (attacker.ownerId !== state.currentPlayer) throw new Error('Cannot attack with opponent unit');
+  if (attacker.actedThisTurn) throw new Error('Unit already acted this turn');
   const targetTile = state.grid[targetPos.row - 1][targetPos.col - 1];
   if (targetTile.unit === null) throw new Error(`No unit at target position (${targetPos.row}, ${targetPos.col})`);
   const defender = targetTile.unit;
@@ -328,7 +337,13 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
   }
   const newGrid = state.grid.map((row, rowIndex) => row.map((tile, colIndex) => {
     let unit = tile.unit;
-    if (rowIndex === attackerPos!.row - 1 && colIndex === attackerPos!.col - 1 && removeAttacker) unit = null;
+    if (rowIndex === attackerPos!.row - 1 && colIndex === attackerPos!.col - 1) {
+      if (removeAttacker) {
+        unit = null;
+      } else if (unit) {
+        unit = { ...unit, actedThisTurn: true };
+      }
+    }
     if (rowIndex === targetPos.row - 1 && colIndex === targetPos.col - 1 && removeDefender) unit = null;
     return { ...tile, unit };
   }));
@@ -343,6 +358,8 @@ export function canAttack(state: GameState, attackerId: string, targetPos: Posit
     }
   }
   if (!attacker || !attackerPos) return false;
+  if (attacker.ownerId !== state.currentPlayer) return false;
+  if (attacker.actedThisTurn) return false;
   const tile = state.grid[targetPos.row - 1][targetPos.col - 1]; if (!tile.unit) return false;
   const defender = tile.unit; if (defender.ownerId === attacker.ownerId) return false;
   // Disallow Shieldman vs Cavalry attacks entirely (both directions)
@@ -368,5 +385,11 @@ export function endTurn(state: GameState): GameState {
   const bonus = middleControlBonus(state, newCurrentPlayer);
   const freeDeploys = countOutsideControl(state, newCurrentPlayer);
   const players = state.players.map((p, i) => i === newCurrentPlayer ? { ...p, actionsRemaining: 1 + bonus } : p);
-  return { ...state, currentPlayer: newCurrentPlayer, turnNumber: state.turnNumber + 1, players, freeDeploymentsRemaining: freeDeploys, hasActedThisTurn: false };
+  // Reset per-unit action flags for the new turn
+  const resetGrid = state.grid.map(row => row.map(tile => {
+    const u = tile.unit;
+    if (!u) return tile;
+    return { ...tile, unit: { ...u, actedThisTurn: false } };
+  }));
+  return { ...state, grid: resetGrid, currentPlayer: newCurrentPlayer, turnNumber: state.turnNumber + 1, players, freeDeploymentsRemaining: freeDeploys, hasActedThisTurn: false };
 }

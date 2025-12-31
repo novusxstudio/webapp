@@ -14,6 +14,7 @@ export interface Unit {
   ownerId: number;
   stats: UnitStats;
   position: Position;
+  actedThisTurn?: boolean;
 }
 
 export interface Tile {
