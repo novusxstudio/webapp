@@ -10,5 +10,6 @@ export interface BotContext {
 export interface Bot {
   id: string;
   name: string;
+  trainedAsPlayer?: 0 | 1;  // For RL agents: which player role was this agent trained as
   decideAction(ctx: BotContext): Action;
 }

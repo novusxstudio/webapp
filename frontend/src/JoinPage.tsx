@@ -40,6 +40,7 @@ export const JoinPage: React.FC = () => {
     localStorage.setItem('novusx.gameId', resp.gameId);
     localStorage.setItem('novusx.playerId', String(resp.playerId));
     localStorage.setItem('novusx.reconnectToken', resp.reconnectToken);
+    localStorage.removeItem('novusx.botId'); // Clear botId for human games
     if (resp.state) { try { localStorage.setItem('novusx.state', JSON.stringify(resp.state)); } catch {} }
     window.location.hash = '#/game';
   };

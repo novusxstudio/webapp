@@ -44,9 +44,10 @@ function middleControlBonus(state: GameState, playerId: number): number {
 const LABEL_TO_KEY: Record<string, keyof typeof UNIT_DATA> = {
   Swordsman: 'swordsman',
   Shieldman: 'shieldman',
-  Spearman: 'spearman',
+  Axeman: 'axeman',
   Cavalry: 'cavalry',
   Archer: 'archer',
+  Spearman: 'spearman',
 };
 
 function normalizeUnitKey(key: string): keyof typeof UNIT_DATA {
@@ -57,6 +58,9 @@ function normalizeUnitKey(key: string): keyof typeof UNIT_DATA {
   if ((UNIT_DATA as any)[lower]) return lower as keyof typeof UNIT_DATA;
   throw new Error('Unknown unit key');
 }
+
+// Maximum deployments per unit type per player
+const MAX_DEPLOYMENTS_PER_TYPE = 3;
 
 export function canDeployUnit(state: GameState, unitKey: string, targetPos: Position): boolean {
   // Target tile must be empty
@@ -77,10 +81,16 @@ export function canDeployUnit(state: GameState, unitKey: string, targetPos: Posi
   const unitStats = UNIT_DATA[normalized];
   if (!unitStats) return false;
 
-  // Must have either a free deployment available (before action) or an action to spend
+  const player = state.players[state.currentPlayer];
   const freeAvailable = state.freeDeploymentsRemaining > 0 && !state.hasActedThisTurn;
-  const actionsAvailable = state.players[state.currentPlayer].actionsRemaining > 0;
+  const actionsAvailable = player.actionsRemaining > 0;
+  // Block deploy if no deployments left and not a free deployment
+  if (!freeAvailable && player.deploymentsRemaining <= 0) return false;
   if (!freeAvailable && !actionsAvailable) return false;
+  // Check per-type deployment limit (max 3 of each type)
+  const deploymentCounts = player.deploymentCounts ?? {};
+  const currentTypeCount = deploymentCounts[normalized] ?? 0;
+  if (currentTypeCount >= MAX_DEPLOYMENTS_PER_TYPE) return false;
 
   return true;
 }
@@ -114,7 +124,18 @@ export function applyDeployUnit(state: GameState, unitKey: string, targetPos: Po
     return row;
   });
 
-  return { ...state, grid: newGrid };
+  // Update deploymentsRemaining and per-type count
+  const playerIndex = state.currentPlayer;
+  const freeAvailable = state.freeDeploymentsRemaining > 0 && !state.hasActedThisTurn;
+  const players = state.players.map((p, i) => {
+    if (i !== playerIndex) return p;
+    const currentCounts = p.deploymentCounts ?? {};
+    const newCounts = { ...currentCounts, [normalized]: (currentCounts[normalized] ?? 0) + 1 };
+    if (freeAvailable) return { ...p, deploymentCounts: newCounts };
+    return { ...p, deploymentsRemaining: p.deploymentsRemaining - 1, deploymentCounts: newCounts };
+  });
+
+  return { ...state, grid: newGrid, players };
 }
 
 export function checkWin(state: GameState, playerId: number): boolean {
@@ -356,13 +377,15 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
   let newGrid: GameState['grid'];
   if (isAdj || isDiagonal) {
     // Simple swap for adjacency or diagonal cavalry swap
+    // Only the initiating unit (sourceUnit) uses up its action
+    // The target unit does NOT have its action consumed
     newGrid = state.grid.map((row, rowIndex) => {
       if (rowIndex === sourcePos!.row - 1 || rowIndex === targetPos.row - 1) {
         return row.map((tile, colIndex) => {
           if (rowIndex === sourcePos!.row - 1 && colIndex === sourcePos!.col - 1) {
             return {
               ...tile,
-              unit: { ...targetUnit, position: { row: sourcePos!.row, col: sourcePos!.col }, actedThisTurn: true }
+              unit: { ...targetUnit, position: { row: sourcePos!.row, col: sourcePos!.col } }
             };
           }
           if (rowIndex === targetPos.row - 1 && colIndex === targetPos.col - 1) {
@@ -378,6 +401,8 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
     });
   } else if ((dx === 2 && dy === 0) || (dx === 0 && dy === 2)) {
     // Cavalry long rotation: cavalry -> target; target -> middle; source becomes empty
+    // Only the initiating cavalry uses up its action
+    // The target unit does NOT have its action consumed
     const midPos: Position = {
       row: dy === 0 ? sourcePos!.row : (sourcePos!.row + targetPos.row) / 2,
       col: dx === 0 ? sourcePos!.col : (sourcePos!.col + targetPos.col) / 2,
@@ -389,8 +414,8 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
         return { ...tile, unit: null };
       }
       if (here.row === midPos.row && here.col === midPos.col) {
-        // Middle gets the target unit, mark as acted
-        return { ...tile, unit: { ...targetUnit, position: { row: midPos.row, col: midPos.col }, actedThisTurn: true } };
+        // Middle gets the target unit, NOT marked as acted
+        return { ...tile, unit: { ...targetUnit, position: { row: midPos.row, col: midPos.col } } };
       }
       if (here.row === targetPos.row && here.col === targetPos.col) {
         // Target gets the cavalry, mark as acted
@@ -441,20 +466,38 @@ function hasLineOfSight(state: GameState, from: Position, to: Position): boolean
 }
 
 export function getMatchupsForType(type: Unit['stats']['type']): { beats: Unit['stats']['type'][]; diesTo: Unit['stats']['type'][] } {
-  const beats = BEATS[type] ?? [];
+  const beats = MELEE_BEATS[type] ?? [];
   const diesTo: Unit['stats']['type'][] = [];
-  (Object.keys(BEATS) as Array<Unit['stats']['type']>).forEach(t => {
-    if (BEATS[t].includes(type)) diesTo.push(t);
+  (Object.keys(MELEE_BEATS) as Array<Unit['stats']['type']>).forEach(t => {
+    if (MELEE_BEATS[t].includes(type)) diesTo.push(t);
   });
   return { beats, diesTo };
 }
 
-const BEATS: Record<Unit['stats']['type'], Unit['stats']['type'][]> = {
-  Swordsman: ['Swordsman', 'Spearman', 'Cavalry', 'Archer'],
-  Shieldman: ['Archer', 'Cavalry'],
-  Spearman: ['Swordsman', 'Spearman', 'Shieldman', 'Cavalry', 'Archer'],
-  Cavalry: ['Cavalry', 'Spearman', 'Archer'],
-  Archer: ['Cavalry', 'Spearman', 'Archer'],
+// Melee combat matchups (Attack Range 1, orthogonal adjacency)
+// Rules: Unit X can attack Unit Y if Y is in X's "Defeats" list
+const MELEE_BEATS: Record<Unit['stats']['type'], Unit['stats']['type'][]> = {
+  // Swordsman defeats: Archer, Cavalry, Axeman, Swordsman, Spearman
+  Swordsman: ['Archer', 'Cavalry', 'Axeman', 'Swordsman', 'Spearman'],
+  // Shieldbearer(Shieldman) defeats: Archer
+  Shieldman: ['Archer'],
+  // Axeman defeats: Archer, Shieldbearer, Cavalry, Axeman, Spearman
+  Axeman: ['Archer', 'Shieldman', 'Cavalry', 'Axeman', 'Spearman'],
+  // Cavalry defeats: Archer, Cavalry, Spearman
+  Cavalry: ['Archer', 'Cavalry', 'Spearman'],
+  // Archer defeats: Archer (melee only)
+  Archer: ['Archer'],
+  // Spearman defeats: Archer, Shieldbearer, Cavalry, Spearman (melee)
+  Spearman: ['Archer', 'Shieldman', 'Cavalry', 'Spearman'],
+};
+
+// Ranged combat matchups (Attack Range 2, for Archer and Spearman)
+// Archer's Defeats(ranged): Archer, Cavalry, Axeman, Swordsman, Spearman
+// Spearman's Defeats(ranged): Archer, Cavalry, Spearman
+// Note: Shieldman is immune to ranged attacks
+const RANGED_BEATS: Partial<Record<Unit['stats']['type'], Unit['stats']['type'][]>> = {
+  Archer: ['Archer', 'Cavalry', 'Axeman', 'Swordsman', 'Spearman'],
+  Spearman: ['Archer', 'Cavalry', 'Spearman'],
 };
 
 // Close-range is strictly orthogonal adjacency (dx+dy === 1)
@@ -469,8 +512,8 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
     throw new Error('No actions remaining');
   }
   // Find the attacker unit by attackerId
-  let attacker = null;
-  let attackerPos = null;
+  let attacker: Unit | null = null;
+  let attackerPos: Position | null = null;
   
   for (let row = 0; row < 5; row++) {
     for (let col = 0; col < 5; col++) {
@@ -514,84 +557,61 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
     throw new Error(`Attack distance ${distance} exceeds unit's attackRange ${attacker.stats.attackRange}`);
   }
 
-  // One-shot combat resolution
   const aType = attacker.stats.type;
   const dType = defender.stats.type;
-
-  // Disallow Shieldman vs Cavalry attacks entirely
-  if ((aType === 'Shieldman' && dType === 'Cavalry') || (aType === 'Cavalry' && dType === 'Shieldman')) {
-    throw new Error('Invalid matchup: Shieldman and Cavalry cannot attack each other');
-  }
-
-  // Archer vs Archer: both removed
+  const isMelee = isCloseRange(attackerPos, targetPos);
+  const isRanged = !isMelee;
+  
   let removeAttacker = false;
   let removeDefender = false;
-
-  // Special-case: Cavalry vs Archer at orthogonal adjacency -> Cavalry survives, Archer dies
-  if (aType === 'Cavalry' && dType === 'Archer' && isCloseRange(attackerPos, targetPos)) {
-    removeDefender = true;
-  } else if (aType === 'Spearman' && dType === 'Archer' && isCloseRange(attackerPos, targetPos)) {
-    // Spearman vs Archer at orthogonal adjacency: Spearman survives; Archer dies
-    removeDefender = true;
-  } else if (aType === 'Spearman' && dType === 'Cavalry') {
-    // Spearman vs Cavalry: Spearman survives; Cavalry dies
-    removeDefender = true;
-  } else if (aType === 'Cavalry' && dType === 'Spearman') {
-    // Cavalry attacking Spearman: Cavalry dies, Spearman survives
-    removeAttacker = true;
-  } else if (aType === 'Swordsman' && dType === 'Spearman') {
-    // Swordsman vs Spearman: Swordsman survives; Spearman dies
-    removeDefender = true;
-  } else if (aType === 'Spearman' && dType === 'Swordsman') {
-    // Spearman attacking Swordsman: Spearman dies, Swordsman survives
-    removeAttacker = true;
-  } else if (aType === 'Archer' && dType === 'Archer') {
-    removeAttacker = true;
-    removeDefender = true;
-  } else if (aType === 'Archer') {
-    // Archer constraints
-    if (isCloseRange(attackerPos, targetPos)) {
-      // Archers lose in close-range; Spearman survives
+  
+  // Ranged combat (Archer or Spearman, distance > 1)
+  if (isRanged && (aType === 'Archer' || aType === 'Spearman')) {
+    if (!hasLineOfSight(state, attackerPos, targetPos)) {
+      throw new Error('Line of sight is blocked for ranged attack');
+    }
+    // Ranged attack - can only target units in attacker's RANGED_BEATS, Shieldman immune
+    if (dType === 'Shieldman') {
+      throw new Error('Shieldman is immune to ranged attacks');
+    }
+    const rangedTargets = RANGED_BEATS[aType] ?? [];
+    if (rangedTargets.includes(dType)) {
+      removeDefender = true;
+    } else {
+      throw new Error('Invalid ranged target');
+    }
+  }
+  // Melee combat
+  else {
+    const attackerBeats = MELEE_BEATS[aType];
+    const defenderBeats = MELEE_BEATS[dType];
+    const attackerWins = attackerBeats.includes(dType);
+    const defenderWins = defenderBeats.includes(aType);
+    
+    // Mutual defeat - both units removed
+    if (attackerWins && defenderWins) {
       removeAttacker = true;
-    } else {
-      // Must have clear line-of-sight to target
-      if (!hasLineOfSight(state, attackerPos, targetPos)) {
-        throw new Error('Line of sight is blocked for Archer');
-      }
-      // Archers can now kill Swordsmen at range; Shieldmen remain immune
-      if (dType === 'Shieldman') {
-        removeAttacker = false;
-        removeDefender = false;
-      } else {
-        removeDefender = true;
-      }
+      removeDefender = true;
     }
-    } else {
-      // Melee units: deterministic matchup
-      const attackerBeats = BEATS[aType];
-      const defenderBeats = BEATS[dType];
-      const attackerWins = attackerBeats.includes(dType);
-      const defenderWins = defenderBeats.includes(aType);
-
-      if (attackerWins && defenderWins) {
-        // Mutual advantage: both removed
-        removeAttacker = true;
-        removeDefender = true;
-      } else if (attackerWins) {
-        removeDefender = true;
-      } else if (defenderWins) {
-        removeAttacker = true;
-      } else {
-        // Neither has advantage: invalid attack (should be blocked by canAttack)
-        throw new Error('Invalid attack: no advantage');
-      }
+    // Attacker wins - defender removed
+    else if (attackerWins) {
+      removeDefender = true;
     }
+    // Defender wins - attacker removed
+    else if (defenderWins) {
+      removeAttacker = true;
+    }
+    // Neither wins - invalid attack (should be blocked by canAttack)
+    else {
+      throw new Error('Invalid attack: no advantage');
+    }
+  }
 
   // Apply removals immediately
   const newGrid = state.grid.map((row, rowIndex) => {
     return row.map((tile, colIndex) => {
       let unit = tile.unit;
-      if (rowIndex === attackerPos.row - 1 && colIndex === attackerPos.col - 1) {
+      if (rowIndex === attackerPos!.row - 1 && colIndex === attackerPos!.col - 1) {
         if (removeAttacker) {
           unit = null;
         } else if (unit) {
@@ -631,38 +651,31 @@ export function canAttack(state: GameState, attackerId: string, targetPos: Posit
   const defender = tile.unit;
   if (defender.ownerId === attacker.ownerId) return false;
 
-  // Disallow Shieldman vs Cavalry attacks entirely (both directions)
-  if ((attacker.stats.type === 'Shieldman' && defender.stats.type === 'Cavalry') ||
-      (attacker.stats.type === 'Cavalry' && defender.stats.type === 'Shieldman')) {
-    return false;
-  }
-
   const distance = getDistance(attackerPos, targetPos);
   if (distance > attacker.stats.attackRange) return false;
 
-  // Archer-specific validation
-  if (attacker.stats.type === 'Archer') {
-    if (isCloseRange(attackerPos, targetPos)) {
-      // Archers can engage at close range but will lose; allow selection
-      return true;
-    }
-    // Prevent ranged targeting of Shieldman entirely; allow Swordsman
-    if (defender.stats.type === 'Shieldman') {
-      return false;
-    }
-    // Require line-of-sight for ranged shots
+  const aType = attacker.stats.type;
+  const dType = defender.stats.type;
+  const isMelee = isCloseRange(attackerPos, targetPos);
+
+  // Ranged attack (Archer or Spearman)
+  if (!isMelee && (aType === 'Archer' || aType === 'Spearman')) {
+    // Shieldman immune to ranged
+    if (dType === 'Shieldman') return false;
+    // Must be in attacker's RANGED_BEATS list and have line of sight
+    const rangedTargets = RANGED_BEATS[aType] ?? [];
+    if (!rangedTargets.includes(dType)) return false;
     return hasLineOfSight(state, attackerPos, targetPos);
   }
 
-  // Non-archers: require that an advantage exists; otherwise attacking is invalid
-  const attackerBeats = BEATS[attacker.stats.type];
-  const defenderBeats = BEATS[defender.stats.type];
-  const attackerWins = attackerBeats.includes(defender.stats.type);
-  const defenderWins = defenderBeats.includes(attacker.stats.type);
+  // Melee attack - check if either unit can defeat the other
+  const attackerBeats = MELEE_BEATS[aType];
+  const defenderBeats = MELEE_BEATS[dType];
+  const attackerWins = attackerBeats.includes(dType);
+  const defenderWins = defenderBeats.includes(aType);
 
-  // If neither has advantage, attack is not a valid option
+  // At least one side must be able to defeat the other
   if (!attackerWins && !defenderWins) return false;
-  // Otherwise valid (including mutual advantage or attacker/defender advantage)
   return true;
 }
 

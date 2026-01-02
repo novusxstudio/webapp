@@ -49,14 +49,34 @@ io.on('connection', (socket) => {
       socket.emit('GAME_CREATED', resp);
       const game = manager.getGame(resp.gameId)!;
       game.broadcastState(io);
-      // Start inactivity timer immediately since bot is present
-      game.startInactivityTimer(io, 30, undefined, () => {
-        manager.endGame(game.id);
-        io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
-      });
-      // If bot starts (current player is bot), execute bot turn
-      game.executeBotTurn();
-      game.broadcastState(io);
+      
+      // If bot starts (current player is bot), execute bot turn first
+      if (game.state.players[game.state.currentPlayer]?.isBot) {
+        game.executeBotTurn();
+        game.broadcastState(io);
+        // Check for victory after bot turn
+        const winner = game.checkVictory();
+        if (winner !== null) {
+          setTimeout(() => {
+            io.to(game.roomName()).emit('GAME_CONCLUDED', { gameId: game.id, winner });
+            manager.endGame(game.id);
+            io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+          }, 0);
+          return;
+        }
+        // Check for draw after bot turn
+        const drawReason = game.checkDrawCondition();
+        if (drawReason !== null) {
+          setTimeout(() => {
+            io.to(game.roomName()).emit('GAME_DRAW', { gameId: game.id, reason: drawReason });
+            manager.endGame(game.id);
+            io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+          }, 0);
+          return;
+        }
+      }
+      
+      // No inactivity timer for bot games - player can take their time
     } catch (err: any) {
       socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
     }
@@ -129,7 +149,7 @@ io.on('connection', (socket) => {
       // First broadcast the updated state so the UI shows the move
       game.broadcastState(io);
 
-      // Then check victory condition (all 3 control points)
+      // Then check victory condition (all 3 control points or elimination)
       const winner = game.checkVictory();
       if (winner !== null) {
         // Defer conclusion to next tick so clients render the move first
@@ -141,15 +161,26 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Reset/start inactivity timer only if both players are present (30s)
-      if (game.hasPlayer(0) && (game.hasPlayer(1) || game.state.players[1]?.isBot)) {
+      // Check draw conditions (turn limit, low resources, mutual invincibility)
+      const drawReason = game.checkDrawCondition();
+      if (drawReason !== null) {
+        setTimeout(() => {
+          io.to(game.roomName()).emit('GAME_DRAW', { gameId: game.id, reason: drawReason });
+          manager.endGame(game.id);
+          io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+        }, 0);
+        return;
+      }
+
+      // Reset/start inactivity timer only for PvP games (not bot games)
+      if (!game.isBotGame() && game.areBothPlayersPresent()) {
         game.startInactivityTimer(io, 30, undefined, () => {
           manager.endGame(game.id);
           io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
         });
       }
 
-      // If it's now a bot's turn, execute bot actions immediately, then broadcast and handle win/timer
+      // If it's now a bot's turn, execute bot actions immediately, then broadcast and handle win/draw
       if (game.state.players[game.state.currentPlayer]?.isBot) {
         game.executeBotTurn();
         game.broadcastState(io);
@@ -162,12 +193,16 @@ io.on('connection', (socket) => {
           }, 0);
           return;
         }
-        if (game.hasPlayer(0) && (game.hasPlayer(1) || game.state.players[1]?.isBot)) {
-          game.startInactivityTimer(io, 30, undefined, () => {
+        const drawReason2 = game.checkDrawCondition();
+        if (drawReason2 !== null) {
+          setTimeout(() => {
+            io.to(game.roomName()).emit('GAME_DRAW', { gameId: game.id, reason: drawReason2 });
             manager.endGame(game.id);
             io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
-          });
+          }, 0);
+          return;
         }
+        // No inactivity timer for bot games
       }
     } catch (err: any) {
       socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });

@@ -1,0 +1,21 @@
+{
+  "milestone": 100,
+  "total_episodes": 100,
+  "total_steps": 14630,
+  "win_rate_agent_p0": 0.36,
+  "win_rate_agent_p1": 0.3,
+  "draw_rate": 0.34,
+  "total_wins_p0": 36,
+  "total_wins_p1": 30,
+  "total_draws": 34,
+  "draw_reasons": {
+    "MAX_TURNS": 0,
+    "REPEATED_STATE": 33,
+    "NO_PROGRESS": 1
+  },
+  "average_game_length": 146.3,
+  "elo_agent_p0": 1015.7854800117543,
+  "elo_agent_p1": 984.2145199882448,
+  "timestamp": "2025-12-31T19:30:52.341220",
+  "device": "cpu"
+}

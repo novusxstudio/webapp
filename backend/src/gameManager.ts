@@ -25,16 +25,24 @@ export class GameManager {
     const game = new GameInstance();
     this.games.set(game.id, game);
 
-    // Player 0 is human
-    game.addPlayer(0, socket.id);
-    game.setReconnectToken(0, GameManager.generateToken());
+    // For RL agents, assign roles based on which agent is being challenged:
+    // - agent_p0 was trained as player 0, so human should be player 1
+    // - agent_p1 was trained as player 1, so human should be player 0
+    // For other bots, human is always player 0
+    const isRLAgentP0 = botId.includes('rl_agent_') && botId.includes('_p0');
+    const humanPlayerId: 0 | 1 = isRLAgentP0 ? 1 : 0;
+    const botPlayerId: 0 | 1 = isRLAgentP0 ? 0 : 1;
+
+    // Human player
+    game.addPlayer(humanPlayerId, socket.id);
+    game.setReconnectToken(humanPlayerId, GameManager.generateToken());
     socket.join(game.roomName());
 
-    // Player 1 is bot
-    const p1 = game.state.players[1];
-    game.state.players[1] = { ...p1, isBot: true, botId };
+    // Bot player
+    const botPlayer = game.state.players[botPlayerId];
+    game.state.players[botPlayerId] = { ...botPlayer, isBot: true, botId };
 
-    return { gameId: game.id, playerId: 0, state: game.state, reconnectToken: game.getReconnectToken(0)! };
+    return { gameId: game.id, playerId: humanPlayerId, state: game.state, reconnectToken: game.getReconnectToken(humanPlayerId)! };
   }
 
   joinGame(socket: Socket, req: JoinGameRequest): JoinGameResponse {

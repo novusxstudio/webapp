@@ -1,5 +1,6 @@
 import React from 'react';
 import { Unit } from './Unit';
+import flagIcon from '../src/assets/control_points/flag.png';
 
 interface TileProps {
   row: number;
@@ -67,17 +68,17 @@ export const Tile: React.FC<TileProps> = ({ isControlPoint, controlPointOwner, i
 
   return (
     <div style={tileStyle} className={pulseClass} onClick={onClick}>
-      {isControlPoint && <div style={controlPointStyle} />}
+      {isControlPoint && <img src={flagIcon} alt="control point" style={controlPointStyle} />}
       {unit && <Unit unitId={unit.id} ownerId={unit.ownerId} unitSize={unitSize} />}
     </div>
   );
 };
 
-/** Small marker for control point tiles (centered dot). */
+/** Flag marker for control point tiles. */
 const controlPointStyle: React.CSSProperties = {
-  width: '12px',
-  height: '12px',
-  borderRadius: '50%',
-  backgroundColor: '#ff6600',
+  width: '36px',
+  height: '36px',
   position: 'absolute',
+  opacity: 0.7,
+  pointerEvents: 'none',
 };

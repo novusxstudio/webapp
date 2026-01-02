@@ -26,21 +26,23 @@ function distance(a: Position, b: Position): number {
 
 // Deterministic counter map adapted to our unit types
 function counterOf(type: Unit['stats']['type']): Unit['stats']['type'] {
-  // Mapping per request:
+  // Counter mapping:
   // Archers counter Cavalry
-  // Spearmen counter Shieldmen
+  // Axeman counters Shieldmen
   // Shieldmen counter Archers
-  // Archers counter Spearmen
   // Swordsman counter Swordsman
+  // Spearman counter Cavalry
   switch (type) {
     case 'Cavalry':
       return 'Archer';
     case 'Shieldman':
-      return 'Spearman';
+      return 'Axeman';
     case 'Archer':
       return 'Shieldman';
+    case 'Axeman':
+      return 'Swordsman';
     case 'Spearman':
-      return 'Archer';
+      return 'Cavalry';
     case 'Swordsman':
     default:
       return 'Swordsman';

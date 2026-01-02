@@ -10,8 +10,8 @@ interface GameBoardProps {
   onMove: (unitId: string, target: Position) => void;
   onAttack: (attackerId: string, targetPos: Position) => void;
   onRotate: (unitId: string, targetPos: Position) => void;
-  selectedDeployUnitType?: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer' | null;
-  onDeploy?: (unitType: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer', targetPos: Position) => void;
+  selectedDeployUnitType?: 'Swordsman' | 'Shieldman' | 'Axeman' | 'Cavalry' | 'Archer' | 'Spearman' | null;
+  onDeploy?: (unitType: 'Swordsman' | 'Shieldman' | 'Axeman' | 'Cavalry' | 'Archer' | 'Spearman', targetPos: Position) => void;
   interactionDisabled?: boolean;
   viewerId?: number;
 }

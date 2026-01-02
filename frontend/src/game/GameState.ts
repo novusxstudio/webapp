@@ -7,7 +7,7 @@ export interface UnitStats {
   // Deterministic one-shot system: only movement/attack ranges and type
   moveRange: number;
   attackRange: number;
-  type: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer';
+  type: 'Swordsman' | 'Shieldman' | 'Axeman' | 'Cavalry' | 'Archer' | 'Spearman';
 }
 
 export interface Unit {
@@ -26,6 +26,9 @@ export interface Tile {
 export interface Player {
   id: number;
   actionsRemaining: number;
+  deploymentsRemaining: number; // Starts at 10 per player
+  // Track how many of each unit type have been deployed (max 3 per type)
+  deploymentCounts?: Record<string, number>;
 }
 
 export interface GameState {

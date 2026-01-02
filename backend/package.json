@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "ts-node src/server.ts",
     "build": "tsc -p .",
-    "start": "node dist/src/server.js"
+    "start": "node dist/src/server.js",
+    "test": "ts-node src/tests/rules.test.ts"
   },
   "dependencies": {
     "socket.io": "^4.7.2"
