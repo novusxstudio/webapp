@@ -59,7 +59,7 @@ function normalizeUnitKey(key: string): keyof typeof UNIT_DATA {
 }
 
 // Maximum deployments per unit type per player
-const MAX_DEPLOYMENTS_PER_TYPE = 3;
+const MAX_DEPLOYMENTS_PER_TYPE = 2;
 
 export function canDeployUnit(state: GameState, unitKey: string, targetPos: Position): boolean {
   const targetTile = state.grid[targetPos.row - 1][targetPos.col - 1];
@@ -72,10 +72,8 @@ export function canDeployUnit(state: GameState, unitKey: string, targetPos: Posi
   if (!unitStats) return false;
   const player = state.players[state.currentPlayer];
   const actionsAvailable = player.actionsRemaining > 0;
-  // Block deploy if no deployments left
-  if (player.deploymentsRemaining <= 0) return false;
   if (!actionsAvailable) return false;
-  // Check per-type deployment limit (max 3 of each type)
+  // Check per-type deployment limit (max 2 of each type)
   const deploymentCounts = player.deploymentCounts ?? {};
   const currentTypeCount = deploymentCounts[normalized] ?? 0;
   if (currentTypeCount >= MAX_DEPLOYMENTS_PER_TYPE) return false;
@@ -89,13 +87,13 @@ export function applyDeployUnit(state: GameState, unitKey: string, targetPos: Po
   const unitId = `${state.currentPlayer}-${String(normalized)}-${Date.now()}`;
   const newUnit: Unit = { id: unitId, ownerId: state.currentPlayer, stats: { ...unitStats }, position: { row: targetPos.row, col: targetPos.col }, actedThisTurn: true };
   const newGrid = state.grid.map((row, r) => r === targetPos.row - 1 ? row.map((tile, c) => c === targetPos.col - 1 ? { ...tile, unit: newUnit } : tile) : row);
-  // Always decrement deploymentsRemaining and increment per-type count
+  // Increment per-type count
   const playerIndex = state.currentPlayer;
   const players = state.players.map((p, i) => {
     if (i !== playerIndex) return p;
     const currentCounts = p.deploymentCounts ?? {};
     const newCounts = { ...currentCounts, [normalized]: (currentCounts[normalized] ?? 0) + 1 };
-    return { ...p, deploymentsRemaining: p.deploymentsRemaining - 1, deploymentCounts: newCounts };
+    return { ...p, deploymentCounts: newCounts };
   });
   return { ...state, grid: newGrid, players };
 }
@@ -349,10 +347,30 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
     if (dType === 'Shieldman') {
       throw new Error('Shieldman is immune to ranged attacks');
     }
-    const rangedTargets = RANGED_BEATS[aType] ?? [];
-    if (rangedTargets.includes(dType)) {
+    
+    // Check if attacker beats defender at range
+    const attackerRangedTargets = RANGED_BEATS[aType] ?? [];
+    const attackerWins = attackerRangedTargets.includes(dType);
+    
+    // Check if defender can counter-attack at range (mutual combat)
+    const defenderRangedTargets = RANGED_BEATS[dType] ?? [];
+    const defenderWins = defenderRangedTargets.includes(aType);
+    
+    // Mutual defeat - both units removed
+    if (attackerWins && defenderWins) {
+      removeAttacker = true;
       removeDefender = true;
-    } else {
+    }
+    // Attacker wins - defender removed
+    else if (attackerWins) {
+      removeDefender = true;
+    }
+    // Defender wins - attacker removed
+    else if (defenderWins) {
+      removeAttacker = true;
+    }
+    // Neither wins - invalid attack
+    else {
       throw new Error('Invalid ranged target');
     }
   }
@@ -425,14 +443,12 @@ export function canAttack(state: GameState, attackerId: string, targetPos: Posit
     return hasLineOfSight(state, attackerPos, targetPos);
   }
   
-  // Melee attack - check if either unit can defeat the other
+// Melee attack - attacker must be able to defeat the defender
   const attackerBeats = MELEE_BEATS[aType] ?? [];
-  const defenderBeats = MELEE_BEATS[dType] ?? [];
   const attackerWins = attackerBeats.includes(dType);
-  const defenderWins = defenderBeats.includes(aType);
-  
-  // At least one side must be able to defeat the other
-  if (!attackerWins && !defenderWins) return false;
+
+  // Attacker must be able to defeat the defender to initiate attack
+  if (!attackerWins) return false;
   return true;
 }
 
@@ -443,13 +459,12 @@ export function endTurn(state: GameState): GameState {
   const bothSides = controlsBothSides(state, newCurrentPlayer);
   const players = state.players.map((p, i) => {
     if (i !== newCurrentPlayer) return p;
-    let deploymentsRemaining = p.deploymentsRemaining;
-    // If both sides, increment deploymentsRemaining by 1
-    if (bothSides) deploymentsRemaining += 1;
+    // Both side control points gives 2 actions, center also gives 2 actions
+    const actionsBonus = bothSides ? 1 : bonus;
     return {
       ...p,
-      actionsRemaining: 1 + bonus,
-      deploymentsRemaining,
+      actionsRemaining: 1 + actionsBonus,
+      deploymentsRemaining: p.deploymentsRemaining,
     };
   });
   const newState = {
@@ -582,21 +597,54 @@ export function checkDraw(state: GameState): DrawReason {
   // Low resources draw - both players have fewer than 3 total resources
   const p0Units = countUnitsOnBoard(state, 0);
   const p1Units = countUnitsOnBoard(state, 1);
-  const p0Total = p0Units + state.players[0].deploymentsRemaining;
-  const p1Total = p1Units + state.players[1].deploymentsRemaining;
+  const p0Total = p0Units + countRemainingDeployments(state, 0);
+  const p1Total = p1Units + countRemainingDeployments(state, 1);
   
   if (p0Total < 3 && p1Total < 3) {
     return 'low_resources';
   }
   
   // Mutual invincibility on control points - only check if both players have no deployments
-  if (state.players[0].deploymentsRemaining === 0 && state.players[1].deploymentsRemaining === 0) {
+  if (!hasDeploymentsLeft(state, 0) && !hasDeploymentsLeft(state, 1)) {
     if (hasMutualInvincibilityOnControlPoints(state)) {
       return 'mutual_invincibility';
     }
   }
   
   return null;
+}
+
+/**
+ * Check if a player has any deployments left (hasn't maxed out all unit types)
+ */
+export function hasDeploymentsLeft(state: GameState, playerId: number): boolean {
+  const player = state.players[playerId];
+  const counts = player.deploymentCounts ?? {};
+  const unitTypes = ['swordsman', 'shieldman', 'axeman', 'cavalry', 'archer', 'spearman'];
+  
+  // If any unit type hasn't reached max (2), player can still deploy
+  for (const unitType of unitTypes) {
+    if ((counts[unitType] ?? 0) < 2) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Count total remaining deployments for a player (12 max total - 2 per type * 6 types)
+ */
+export function countRemainingDeployments(state: GameState, playerId: number): number {
+  const player = state.players[playerId];
+  const counts = player.deploymentCounts ?? {};
+  const unitTypes = ['swordsman', 'shieldman', 'axeman', 'cavalry', 'archer', 'spearman'];
+  const maxPerType = 2;
+  
+  let remaining = 0;
+  for (const unitType of unitTypes) {
+    remaining += maxPerType - (counts[unitType] ?? 0);
+  }
+  return remaining;
 }
 
 /**
@@ -608,12 +656,12 @@ export function checkElimination(state: GameState): 0 | 1 | null {
   const p1Units = countUnitsOnBoard(state, 1);
   
   // Player 0 eliminated - player 1 wins
-  if (p0Units === 0 && state.players[0].deploymentsRemaining === 0) {
+  if (p0Units === 0 && !hasDeploymentsLeft(state, 0)) {
     return 0;
   }
   
   // Player 1 eliminated - player 0 wins
-  if (p1Units === 0 && state.players[1].deploymentsRemaining === 0) {
+  if (p1Units === 0 && !hasDeploymentsLeft(state, 1)) {
     return 1;
   }
   

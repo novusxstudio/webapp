@@ -2,7 +2,7 @@ import React from 'react';
 import { UNIT_DATA } from '../src/game/units';
 import { getMatchupsForType } from '../src/game/rules';
 
-const MAX_DEPLOYMENTS_PER_TYPE = 3;
+const MAX_DEPLOYMENTS_PER_TYPE = 2;
 
 interface UnitPickerProps {
   selected: 'Swordsman' | 'Shieldman' | 'Axeman' | 'Cavalry' | 'Archer' | 'Spearman' | null;
@@ -50,8 +50,9 @@ export const UnitPicker: React.FC<UnitPickerProps> = ({ selected, onSelect, depl
     background: '#fff',
     borderRadius: '8px',
     border: '1px solid #e5e7eb',
-    width: '220px',
-    height: '360px',
+    width: '240px',
+    minHeight: '360px',
+    maxHeight: '500px',
     boxSizing: 'border-box',
   };
   const title: React.CSSProperties = {
@@ -97,11 +98,6 @@ export const UnitPicker: React.FC<UnitPickerProps> = ({ selected, onSelect, depl
   return (
     <div style={container}>
       <div style={title}>Deployment</div>
-      {typeof deploymentsRemaining === 'number' && (
-        <div style={{ fontSize: '13px', color: '#1d4ed8', fontWeight: 600, marginBottom: 4 }}>
-          Total deployments left: {deploymentsRemaining}
-        </div>
-      )}
       {disabled && (
         <div style={{ fontSize: '12px', color: '#6b7280' }}>Unavailable on opponent's turn</div>
       )}
@@ -130,23 +126,32 @@ export const UnitPicker: React.FC<UnitPickerProps> = ({ selected, onSelect, depl
           const stats = entry[1];
           const match = getMatchupsForType(stats.type);
           const card: React.CSSProperties = {
-            marginTop: '10px',
-            padding: '10px',
-            border: '1px solid #e5e7eb',
+            marginTop: '12px',
+            padding: '12px',
+            border: '2px solid #3b82f6',
             borderRadius: '8px',
-            background: '#f9fafb',
+            background: '#eff6ff',
             fontSize: '12px',
             color: '#374151',
           };
+          const cardTitle: React.CSSProperties = {
+            fontWeight: 700,
+            fontSize: '13px',
+            color: '#1d4ed8',
+            marginBottom: '10px',
+            borderBottom: '1px solid #bfdbfe',
+            paddingBottom: '6px',
+          };
           const row: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', marginBottom: '6px' };
-          const label: React.CSSProperties = { fontWeight: 700 };
-          const value: React.CSSProperties = { marginLeft: '8px' };
+          const label: React.CSSProperties = { fontWeight: 600, color: '#4b5563' };
+          const value: React.CSSProperties = { marginLeft: '8px', color: '#1f2937' };
           return (
             <div style={card}>
+              <div style={cardTitle}>{selected} Stats</div>
               <div style={row}><span style={label}>Move Range:</span><span style={value}>{stats.moveRange}</span></div>
               <div style={row}><span style={label}>Attack Range:</span><span style={value}>{stats.attackRange}</span></div>
-              <div style={row}><span style={label}>Beats:</span><span style={value}>{match.beats.join(', ') || '—'}</span></div>
-              <div style={row}><span style={label}>Dies To:</span><span style={value}>{match.diesTo.join(', ') || '—'}</span></div>
+              <div style={row}><span style={label}>Beats (Melee):</span><span style={value}>{match.beatsMelee.join(', ') || '—'}</span></div>
+              <div style={row}><span style={label}>Beats (Ranged):</span><span style={value}>{match.beatsRanged.length > 0 ? match.beatsRanged.join(', ') : '—'}</span></div>
             </div>
           );
         })()}

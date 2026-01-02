@@ -27,6 +27,8 @@ import {
   endTurn,
   checkDraw,
   checkElimination,
+  hasDeploymentsLeft,
+  countRemainingDeployments,
   countUnitsOnBoard,
   MAX_TURN_LIMIT,
 } from '../logic/rules';
@@ -238,28 +240,15 @@ function runTests() {
     assert.equal(unit?.actedThisTurn, true);
   });
   
-  test('Deploy consumes 1 deployment', () => {
-    let state = createTestState();
-    assert.equal(state.players[0].deploymentsRemaining, 10);
-    state = applyDeployUnit(state, 'swordsman', { row: 1, col: 1 });
-    assert.equal(state.players[0].deploymentsRemaining, 9);
-  });
-  
-  test('Cannot deploy with 0 deployments remaining', () => {
-    let state = createTestState();
-    state.players[0].deploymentsRemaining = 0;
-    assert.equal(canDeployUnit(state, 'swordsman', { row: 1, col: 1 }), false);
-  });
-  
   test('Cannot deploy with 0 actions remaining', () => {
     let state = createTestState();
     state.players[0].actionsRemaining = 0;
     assert.equal(canDeployUnit(state, 'swordsman', { row: 1, col: 1 }), false);
   });
   
-  test('Each unit type can be deployed max 3 times', () => {
+  test('Each unit type can be deployed max 2 times', () => {
     let state = createTestState();
-    state.players[0].deploymentCounts = { swordsman: 3, shieldman: 0, axeman: 0, cavalry: 0, archer: 0, spearman: 0 };
+    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 0, axeman: 0, cavalry: 0, archer: 0, spearman: 0 };
     assert.equal(canDeployUnit(state, 'swordsman', { row: 1, col: 1 }), false);
     assert.equal(canDeployUnit(state, 'archer', { row: 1, col: 1 }), true);
   });
@@ -501,14 +490,37 @@ function runTests() {
     assert.notEqual(getUnitAt(state, { row: 2, col: 2 }), null);
   });
   
-  test('Melee battle: Shieldman CANNOT attack Swordsman (mutual invincibility)', () => {
+  test('Melee battle: Shieldman CANNOT attack Swordsman (Shieldman cannot beat Swordsman)', () => {
     let state = createTestState();
     state = placeUnit(state, { row: 2, col: 2 }, 0, 'shieldman');
     state = placeUnit(state, { row: 2, col: 3 }, 1, 'swordsman');
     const shieldman = getUnitAt(state, { row: 2, col: 2 })!;
-    // canAttack returns false - neither can defeat the other
-    // Swordsman's defeat list doesn't include Shieldman, Shieldman only defeats Archer
+    // canAttack returns false - Shieldman cannot beat Swordsman
+    // Shieldman only defeats Archer
     assert.equal(canAttack(state, shieldman.id, { row: 2, col: 3 }), false);
+  });
+
+  test('Melee battle: Shieldman CANNOT attack Spearman (Shieldman cannot beat Spearman)', () => {
+    let state = createTestState();
+    state = placeUnit(state, { row: 2, col: 2 }, 0, 'shieldman');
+    state = placeUnit(state, { row: 2, col: 3 }, 1, 'spearman');
+    const shieldman = getUnitAt(state, { row: 2, col: 2 })!;
+    // canAttack returns false - Shieldman cannot beat Spearman
+    // Even though Spearman beats Shieldman, Shieldman cannot initiate the attack
+    assert.equal(canAttack(state, shieldman.id, { row: 2, col: 3 }), false);
+  });
+
+  test('Melee battle: Spearman CAN attack Shieldman (Spearman beats Shieldman)', () => {
+    let state = createTestState();
+    state = placeUnit(state, { row: 2, col: 2 }, 0, 'spearman');
+    state = placeUnit(state, { row: 2, col: 3 }, 1, 'shieldman');
+    const spearman = getUnitAt(state, { row: 2, col: 2 })!;
+    // Spearman beats Shieldman, so attack is valid
+    assert.equal(canAttack(state, spearman.id, { row: 2, col: 3 }), true);
+    state = applyAttack(state, spearman.id, { row: 2, col: 3 });
+    // Spearman wins, Shieldman dies
+    assert.notEqual(getUnitAt(state, { row: 2, col: 2 }), null);
+    assert.equal(getUnitAt(state, { row: 2, col: 3 }), null);
   });
   
   test('Melee battle: Axeman defeats Shieldbearer', () => {
@@ -656,13 +668,15 @@ function runTests() {
     assert.equal(getUnitAt(state, { row: 3, col: 3 }), null);
   });
   
-  test('Ranged: Archer defeats Spearman at range', () => {
+  test('Ranged: Archer vs Spearman at range - mutual defeat (both can hit each other)', () => {
     let state = createTestState();
     state = placeUnit(state, { row: 3, col: 1 }, 0, 'archer');
     state = placeUnit(state, { row: 3, col: 3 }, 1, 'spearman');
     const archer = getUnitAt(state, { row: 3, col: 1 })!;
     state = applyAttack(state, archer.id, { row: 3, col: 3 });
-    assert.equal(getUnitAt(state, { row: 3, col: 3 }), null);
+    // Both should die - Archer beats Spearman at range, Spearman beats Archer at range
+    assert.equal(getUnitAt(state, { row: 3, col: 3 }), null, 'Spearman should die');
+    assert.equal(getUnitAt(state, { row: 3, col: 1 }), null, 'Archer should also die (mutual defeat)');
   });
   
   test('Ranged: Archer CANNOT attack Shieldbearer at range', () => {
@@ -682,13 +696,15 @@ function runTests() {
     assert.equal(canAttack(state, archer.id, { row: 3, col: 3 }), false);
   });
   
-  test('Ranged: Spearman defeats Archer at range', () => {
+  test('Ranged: Spearman vs Archer at range - mutual defeat (both can hit each other)', () => {
     let state = createTestState();
     state = placeUnit(state, { row: 3, col: 1 }, 0, 'spearman');
     state = placeUnit(state, { row: 3, col: 3 }, 1, 'archer');
     const spearman = getUnitAt(state, { row: 3, col: 1 })!;
     state = applyAttack(state, spearman.id, { row: 3, col: 3 });
-    assert.equal(getUnitAt(state, { row: 3, col: 3 }), null);
+    // Both should die - Spearman beats Archer at range, Archer beats Spearman at range
+    assert.equal(getUnitAt(state, { row: 3, col: 3 }), null, 'Archer should die');
+    assert.equal(getUnitAt(state, { row: 3, col: 1 }), null, 'Spearman should also die (mutual defeat)');
   });
   
   test('Ranged: Spearman defeats Cavalry at range', () => {
@@ -700,13 +716,15 @@ function runTests() {
     assert.equal(getUnitAt(state, { row: 3, col: 3 }), null);
   });
   
-  test('Ranged: Spearman defeats Spearman at range', () => {
+  test('Ranged: Spearman vs Spearman at range - mutual defeat', () => {
     let state = createTestState();
     state = placeUnit(state, { row: 3, col: 1 }, 0, 'spearman');
     state = placeUnit(state, { row: 3, col: 3 }, 1, 'spearman');
     const spearman = getUnitAt(state, { row: 3, col: 1 })!;
     state = applyAttack(state, spearman.id, { row: 3, col: 3 });
-    assert.equal(getUnitAt(state, { row: 3, col: 3 }), null);
+    // Both should die - both Spearmen can hit each other at range
+    assert.equal(getUnitAt(state, { row: 3, col: 3 }), null, 'Defender Spearman should die');
+    assert.equal(getUnitAt(state, { row: 3, col: 1 }), null, 'Attacker Spearman should also die (mutual defeat)');
   });
   
   test('Ranged: Spearman CANNOT attack Swordsman at range', () => {
@@ -731,6 +749,61 @@ function runTests() {
     state = placeUnit(state, { row: 3, col: 3 }, 1, 'axeman');
     const spearman = getUnitAt(state, { row: 3, col: 1 })!;
     assert.equal(canAttack(state, spearman.id, { row: 3, col: 3 }), false);
+  });
+  
+  test('Ranged: Archer vs Archer at range - mutual defeat', () => {
+    let state = createTestState();
+    state = placeUnit(state, { row: 3, col: 1 }, 0, 'archer');
+    state = placeUnit(state, { row: 3, col: 3 }, 1, 'archer');
+    const archer = getUnitAt(state, { row: 3, col: 1 })!;
+    state = applyAttack(state, archer.id, { row: 3, col: 3 });
+    // Both Archers can hit each other at range
+    assert.equal(getUnitAt(state, { row: 3, col: 3 }), null, 'Defender Archer should die');
+    assert.equal(getUnitAt(state, { row: 3, col: 1 }), null, 'Attacker Archer should also die (mutual defeat)');
+  });
+  
+  test('Ranged: Spearman vs Cavalry at range - only Cavalry dies (no mutual defeat)', () => {
+    let state = createTestState();
+    state = placeUnit(state, { row: 3, col: 1 }, 0, 'spearman');
+    state = placeUnit(state, { row: 3, col: 3 }, 1, 'cavalry');
+    const spearman = getUnitAt(state, { row: 3, col: 1 })!;
+    state = applyAttack(state, spearman.id, { row: 3, col: 3 });
+    // Spearman beats Cavalry at range, Cavalry has no ranged attack
+    assert.equal(getUnitAt(state, { row: 3, col: 3 }), null, 'Cavalry should die');
+    assert.notEqual(getUnitAt(state, { row: 3, col: 1 }), null, 'Spearman should survive (Cavalry cannot counter at range)');
+  });
+  
+  test('Ranged: Archer vs Cavalry at range - only Cavalry dies (no mutual defeat)', () => {
+    let state = createTestState();
+    state = placeUnit(state, { row: 3, col: 1 }, 0, 'archer');
+    state = placeUnit(state, { row: 3, col: 3 }, 1, 'cavalry');
+    const archer = getUnitAt(state, { row: 3, col: 1 })!;
+    state = applyAttack(state, archer.id, { row: 3, col: 3 });
+    // Archer beats Cavalry at range, Cavalry has no ranged attack
+    assert.equal(getUnitAt(state, { row: 3, col: 3 }), null, 'Cavalry should die');
+    assert.notEqual(getUnitAt(state, { row: 3, col: 1 }), null, 'Archer should survive (Cavalry cannot counter at range)');
+  });
+  
+  test('Ranged: Archer vs Swordsman at range - only Swordsman dies (no mutual defeat)', () => {
+    let state = createTestState();
+    state = placeUnit(state, { row: 3, col: 1 }, 0, 'archer');
+    state = placeUnit(state, { row: 3, col: 3 }, 1, 'swordsman');
+    const archer = getUnitAt(state, { row: 3, col: 1 })!;
+    state = applyAttack(state, archer.id, { row: 3, col: 3 });
+    // Archer beats Swordsman at range, Swordsman has no ranged attack
+    assert.equal(getUnitAt(state, { row: 3, col: 3 }), null, 'Swordsman should die');
+    assert.notEqual(getUnitAt(state, { row: 3, col: 1 }), null, 'Archer should survive (Swordsman cannot counter at range)');
+  });
+  
+  test('Ranged: Archer vs Axeman at range - only Axeman dies (no mutual defeat)', () => {
+    let state = createTestState();
+    state = placeUnit(state, { row: 3, col: 1 }, 0, 'archer');
+    state = placeUnit(state, { row: 3, col: 3 }, 1, 'axeman');
+    const archer = getUnitAt(state, { row: 3, col: 1 })!;
+    state = applyAttack(state, archer.id, { row: 3, col: 3 });
+    // Archer beats Axeman at range, Axeman has no ranged attack
+    assert.equal(getUnitAt(state, { row: 3, col: 3 }), null, 'Axeman should die');
+    assert.notEqual(getUnitAt(state, { row: 3, col: 1 }), null, 'Archer should survive (Axeman cannot counter at range)');
   });
   
   // ==========================================================================
@@ -791,14 +864,14 @@ function runTests() {
     assert.equal(state.freeDeploymentsRemaining, 1);
   });
   
-  test('Both side control points gives +1 deployment', () => {
+  test('Both side control points gives 2 actions', () => {
     let state = createTestState();
     // Place player 1's units on both side control points
     state = placeUnit(state, { row: 3, col: 1 }, 1, 'swordsman');
     state = placeUnit(state, { row: 3, col: 5 }, 1, 'archer');
     state = endTurn(state);
-    // Check deploymentsRemaining increased by 1
-    assert.equal(state.players[1].deploymentsRemaining, 11);
+    // Player 1 should have 2 actions
+    assert.equal(state.players[1].actionsRemaining, 2);
   });
   
   test('Both side + center gives 2 actions + free deploy', () => {
@@ -808,12 +881,12 @@ function runTests() {
     state = placeUnit(state, { row: 3, col: 3 }, 1, 'shieldman');
     state = placeUnit(state, { row: 3, col: 5 }, 1, 'archer');
     state = endTurn(state);
-    // 2 actions from center OR both sides
+    // 2 actions from both sides (or center - doesn't stack)
     assert.equal(state.players[1].actionsRemaining, 2);
     // Free deployment from side control
     assert.equal(state.freeDeploymentsRemaining, 1);
-    // +1 deployment from controlling both sides
-    assert.equal(state.players[1].deploymentsRemaining, 11);
+    // No extra deployment bonus anymore
+    assert.equal(state.players[1].deploymentsRemaining, 10);
   });
   
   // ==========================================================================
@@ -852,23 +925,72 @@ function runTests() {
   
   test('Elimination: Player with no units and no deployments loses', () => {
     let state = createTestState();
-    // Player 0 has no units on board and no deployments
-    state.players[0].deploymentsRemaining = 0;
+    // Player 0 has maxed out all unit types (no deployments left)
+    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
     // Player 1 has a unit
     state = placeUnit(state, { row: 3, col: 3 }, 1, 'swordsman');
+    // Player 0 has no units and no deployments - eliminated
+    assert.equal(checkElimination(state), 0);
+  });
+
+  test('Elimination: Winner is opponent of eliminated player', () => {
+    let state = createTestState();
+    // Player 1 has maxed out all unit types (no deployments left)
+    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
+    // Player 0 has a unit
+    state = placeUnit(state, { row: 2, col: 2 }, 0, 'swordsman');
+    // Player 1 has no units and no deployments - eliminated, Player 0 wins
+    assert.equal(checkElimination(state), 1);
+  });
+  
+  test('Victory for Player 0 when Player 1 has no units on board and no deployments left', () => {
+    let state = createTestState();
+    // Player 1 has no deployments left (all unit types maxed at 2 each)
+    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
+    // Player 1 has no units on board
+    assert.equal(countUnitsOnBoard(state, 1), 0);
+    // Player 1 has no deployments left
+    assert.equal(hasDeploymentsLeft(state, 1), false);
+    assert.equal(countRemainingDeployments(state, 1), 0);
+    // Result: Player 1 is eliminated (checkElimination returns 1 = eliminated player)
+    // This means Player 0 wins
+    assert.equal(checkElimination(state), 1);
+  });
+  
+  test('Victory for Player 1 when Player 0 has no units on board and no deployments left', () => {
+    let state = createTestState();
+    // Player 0 has no deployments left (all unit types maxed at 2 each)
+    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
+    // Player 0 has no units on board
+    assert.equal(countUnitsOnBoard(state, 0), 0);
+    // Player 0 has no deployments left
+    assert.equal(hasDeploymentsLeft(state, 0), false);
+    assert.equal(countRemainingDeployments(state, 0), 0);
+    // Result: Player 0 is eliminated (checkElimination returns 0 = eliminated player)
+    // This means Player 1 wins
     assert.equal(checkElimination(state), 0);
   });
   
   test('No elimination when player has units on board', () => {
     let state = createTestState();
-    state.players[0].deploymentsRemaining = 0;
+    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
     state = placeUnit(state, { row: 2, col: 2 }, 0, 'swordsman');
     assert.equal(checkElimination(state), null);
   });
   
   test('No elimination when player has deployments left', () => {
     let state = createTestState();
-    assert.equal(state.players[0].deploymentsRemaining, 10);
+    // Player has no units but can still deploy (hasn't maxed all types)
+    assert.equal(hasDeploymentsLeft(state, 0), true);
+    assert.equal(checkElimination(state), null);
+  });
+
+  test('No elimination when player has at least one unit type not maxed', () => {
+    let state = createTestState();
+    // Player 0 has maxed 5 unit types but not spearman
+    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 0 };
+    // No units on board but can still deploy spearman
+    assert.equal(hasDeploymentsLeft(state, 0), true);
     assert.equal(checkElimination(state), null);
   });
   
@@ -883,10 +1005,11 @@ function runTests() {
     assert.equal(checkDraw(state), 'turn_limit');
   });
   
-  test('Draw: Both players have < 3 total resources', () => {
+  test('Draw: Both players have 0 deployments and < 3 units on board', () => {
     let state = createTestState();
-    state.players[0].deploymentsRemaining = 0;
-    state.players[1].deploymentsRemaining = 0;
+    // Max out all deployments for both players
+    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
+    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
     // Each has 2 units on board (total 2 each)
     state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman');
     state = placeUnit(state, { row: 1, col: 2 }, 0, 'archer');
@@ -894,16 +1017,42 @@ function runTests() {
     state = placeUnit(state, { row: 5, col: 2 }, 1, 'archer');
     assert.equal(checkDraw(state), 'low_resources');
   });
+
+  test('Draw: Both players have < 3 deployments and 0 units on board', () => {
+    let state = createTestState();
+    // Each player has only 2 deployments left (e.g. only spearman not maxed)
+    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 1 };
+    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 1 };
+    // Each has 0 units on board, 1 deployment remaining each
+    assert.equal(countRemainingDeployments(state, 0), 1);
+    assert.equal(countRemainingDeployments(state, 1), 1);
+    assert.equal(checkDraw(state), 'low_resources');
+  });
+
+  test('Draw: Both players have < 3 total resources', () => {
+    let state = createTestState();
+    // Each player has 1 deployment left
+    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 1 };
+    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 1 };
+    // Each has 1 unit on board
+    state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman');
+    state = placeUnit(state, { row: 5, col: 2 }, 1, 'archer');
+    // 1 unit + 1 deployment = 2 total each (< 3)
+    assert.equal(checkDraw(state), 'low_resources');
+  });
   
   test('No draw if one player has >= 3 total resources', () => {
     let state = createTestState();
-    state.players[0].deploymentsRemaining = 1;
-    state.players[1].deploymentsRemaining = 0;
+    // Player 0 has 1 deployment left
+    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 1 };
+    // Player 1 has 0 deployments left
+    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
     state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman');
     state = placeUnit(state, { row: 1, col: 2 }, 0, 'archer');
     state = placeUnit(state, { row: 5, col: 1 }, 1, 'swordsman');
     state = placeUnit(state, { row: 5, col: 2 }, 1, 'archer');
     // Player 0 has 3 total (2 units + 1 deployment)
+    assert.equal(countRemainingDeployments(state, 0), 1);
     assert.equal(checkDraw(state), null);
   });
   
@@ -913,8 +1062,9 @@ function runTests() {
     // Player 0 has Shieldman on control point (immune to ranged, only beaten by Axeman/Spearman)
     // Player 1 has Shieldman on control point
     // Neither player has Axeman or Spearman
-    state.players[0].deploymentsRemaining = 0; // Must be 0 for mutual invincibility check
-    state.players[1].deploymentsRemaining = 0;
+    // Max out all deployments for both players
+    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
+    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
     state = placeUnit(state, { row: 3, col: 1 }, 0, 'shieldman');
     state = placeUnit(state, { row: 3, col: 5 }, 1, 'shieldman');
     // Add more units to avoid low_resources draw
@@ -928,8 +1078,10 @@ function runTests() {
   
   test('No mutual invincibility draw if either player has deployments left', () => {
     let state = createTestState();
-    state.players[0].deploymentsRemaining = 1; // Has deployments - no mutual invincibility check
-    state.players[1].deploymentsRemaining = 0;
+    // Player 0 has 1 deployment left - no mutual invincibility check
+    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 1 };
+    // Player 1 has 0 deployments left
+    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
     state = placeUnit(state, { row: 3, col: 1 }, 0, 'shieldman');
     state = placeUnit(state, { row: 3, col: 5 }, 1, 'shieldman');
     state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman');
