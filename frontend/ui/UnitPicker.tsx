@@ -7,7 +7,6 @@ const MAX_DEPLOYMENTS_PER_TYPE = 3;
 interface UnitPickerProps {
   selected: 'Swordsman' | 'Shieldman' | 'Axeman' | 'Cavalry' | 'Archer' | 'Spearman' | null;
   onSelect: (u: 'Swordsman' | 'Shieldman' | 'Axeman' | 'Cavalry' | 'Archer' | 'Spearman' | null) => void;
-  deploymentsRemaining?: number;
   deploymentCounts?: Record<string, number>;
   disabled?: boolean;
 }
@@ -26,7 +25,7 @@ const options: Array<'Swordsman' | 'Shieldman' | 'Axeman' | 'Cavalry' | 'Archer'
  * - Allows selecting a unit type or None (exit deploy mode).
  * - Disables interactions on opponent's turn.
  */
-export const UnitPicker: React.FC<UnitPickerProps> = ({ selected, onSelect, deploymentsRemaining, deploymentCounts = {}, disabled = false }) => {
+export const UnitPicker: React.FC<UnitPickerProps> = ({ selected, onSelect, deploymentCounts = {}, disabled = false }) => {
   // Map display names to normalized keys used in deploymentCounts
   const typeToKey: Record<string, string> = {
     Swordsman: 'swordsman',

@@ -1,10 +1,12 @@
-// Socket.IO authentication middleware
-// Verifies JWT on connection and attaches user to socket.data
+/**
+ * Socket.IO authentication middleware
+ * Verifies JWT on connection and attaches user to socket.data
+ * 
+ * Note: SocketData type is extended in src/types/socket.d.ts
+ */
 
 import type { Server as IOServer, Socket } from 'socket.io';
 import { verifyAuthToken, type VerifiedUser } from '../auth/jwt';
-
-// SocketData type is extended in src/types/socket.d.ts
 
 /**
  * Apply authentication middleware to Socket.IO server

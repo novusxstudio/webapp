@@ -571,7 +571,6 @@ function App() {
                 setSelectedUnit(null);
               }
             }}
-            deploymentsRemaining={gameState.players[playerId]?.deploymentsRemaining}
             deploymentCounts={gameState.players[playerId]?.deploymentCounts}
             disabled={!isMyTurn}
           />
