@@ -2,16 +2,9 @@
 // Verifies JWT on connection and attaches user to socket.data
 
 import type { Server as IOServer, Socket } from 'socket.io';
-import { verifyAuthToken, extractToken, type VerifiedUser } from '../auth/jwt';
+import { verifyAuthToken, type VerifiedUser } from '../auth/jwt';
 
-// Extend Socket.data type to include verified user
-declare module 'socket.io' {
-  interface Socket {
-    data: {
-      user?: VerifiedUser;
-    };
-  }
-}
+// SocketData type is extended in src/types/socket.d.ts
 
 /**
  * Apply authentication middleware to Socket.IO server
