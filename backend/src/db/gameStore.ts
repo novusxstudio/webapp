@@ -18,6 +18,8 @@ import type { GameResult } from '@prisma/client';
  * @param userId - Auth.js user ID from JWT sub claim
  */
 export async function ensureUser(userId: string): Promise<void> {
+  if (!prisma) return; // No DB configured
+  
   try {
     await prisma.user.upsert({
       where: { id: userId },
@@ -66,6 +68,11 @@ export async function saveCompletedGame(
     result = 'DRAW';
   } else {
     result = 'WIN';
+  }
+
+  if (!prisma) {
+    console.log('[DB] Skipping save - no database configured');
+    return;
   }
 
   try {

@@ -25,10 +25,16 @@ export const config = {
 // Validate required environment variables in production
 export function validateConfig(): void {
   if (config.nodeEnv === 'production') {
-    const required = ['AUTH_SECRET', 'DATABASE_URL', 'FRONTEND_URL'];
+    // AUTH_SECRET and FRONTEND_URL are required
+    // DATABASE_URL is optional (write-only Prisma mode)
+    const required = ['AUTH_SECRET', 'FRONTEND_URL'];
     const missing = required.filter(key => !process.env[key]);
     if (missing.length > 0) {
       throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+    }
+    
+    if (!process.env.DATABASE_URL) {
+      console.warn('[CONFIG] DATABASE_URL not set - game history will not be persisted');
     }
   }
 }

@@ -1,5 +1,6 @@
 // Prisma client singleton for database access
 // Ensures single connection pool across the application
+// Made optional so server can run without database
 
 import { PrismaClient } from '@prisma/client';
 
@@ -8,19 +9,28 @@ declare global {
   var prisma: PrismaClient | undefined;
 }
 
-// Prevent multiple instances in development (hot reload)
-export const prisma = global.prisma || new PrismaClient({
-  log: process.env.NODE_ENV === 'development' 
-    ? ['query', 'error', 'warn'] 
-    : ['error'],
-});
+// Only initialize Prisma if DATABASE_URL is set
+let prismaClient: PrismaClient | null = null;
 
-if (process.env.NODE_ENV !== 'production') {
-  global.prisma = prisma;
+if (process.env.DATABASE_URL) {
+  prismaClient = global.prisma || new PrismaClient({
+    log: process.env.NODE_ENV === 'development' 
+      ? ['query', 'error', 'warn'] 
+      : ['error'],
+  });
+
+  if (process.env.NODE_ENV !== 'production') {
+    global.prisma = prismaClient;
+  }
+} else {
+  console.warn('[DB] DATABASE_URL not set - running without database persistence');
 }
+
+export const prisma = prismaClient;
 
 // Graceful shutdown
 process.on('beforeExit', async () => {
-  await prisma.$disconnect();
+  if (prisma) {
+    await prisma.$disconnect();
+  }
 });
-
