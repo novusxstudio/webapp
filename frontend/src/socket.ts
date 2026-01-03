@@ -8,7 +8,8 @@
  * - Socket.IO handles reconnection automatically
  */
 
-import { io, Socket } from 'socket.io-client';
+import { io } from 'socket.io-client';
+import type { Socket } from 'socket.io-client';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL as string;
 
@@ -74,7 +75,7 @@ export function connectSocket(token: string): Promise<Socket> {
     socket.once('connect', onConnect);
     socket.once('connect_error', onConnectError);
 
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', (reason: string) => {
       console.log('[SOCKET] Disconnected:', reason);
       if (reason === 'io server disconnect') {
         connectionPromise = null;

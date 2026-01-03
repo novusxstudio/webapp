@@ -38,4 +38,14 @@ export interface GameState {
   turnNumber: number;
   freeDeploymentsRemaining: number;
   hasActedThisTurn: boolean;
+  // Optional: sent by server for logging
+  lastAction?: {
+    type: string;
+    by: number;
+    unitId?: string;
+    targetId?: string;
+    unitType?: string;
+    to?: Position;
+    [key: string]: unknown;
+  };
 }

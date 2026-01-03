@@ -82,10 +82,10 @@ export function canDeployUnit(state: GameState, unitKey: string, targetPos: Posi
   if (!unitStats) return false;
 
   const player = state.players[state.currentPlayer];
-  const freeAvailable = state.freeDeploymentsRemaining > 0 && !state.hasActedThisTurn;
+  const hasFreeDeployment = state.freeDeploymentsRemaining > 0 && !state.hasActedThisTurn;
   const actionsAvailable = player.actionsRemaining > 0;
   // Need either a free deployment or an action available
-  if (!freeAvailable && !actionsAvailable) return false;
+  if (!hasFreeDeployment && !actionsAvailable) return false;
   // Check per-type deployment limit (max 2 of each type)
   const deploymentCounts = player.deploymentCounts ?? {};
   const currentTypeCount = deploymentCounts[normalized] ?? 0;
@@ -125,7 +125,6 @@ export function applyDeployUnit(state: GameState, unitKey: string, targetPos: Po
 
   // Update per-type count
   const playerIndex = state.currentPlayer;
-  const freeAvailable = state.freeDeploymentsRemaining > 0 && !state.hasActedThisTurn;
   const players = state.players.map((p, i) => {
     if (i !== playerIndex) return p;
     const currentCounts = p.deploymentCounts ?? {};
@@ -280,8 +279,6 @@ export function canRotate(state: GameState, unitId: string, targetPos: Position)
     return true;
   }
   return false;
-  
-  return true;
 }
 
 export function applyMove(state: GameState, unitId: string, target: Position): GameState {
