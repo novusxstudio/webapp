@@ -71,9 +71,18 @@ export function canDeployUnit(state: GameState, unitKey: string, targetPos: Posi
   const unitStats = UNIT_DATA[normalized];
   if (!unitStats) return false;
   const player = state.players[state.currentPlayer];
-  const actionsAvailable = player.actionsRemaining > 0;
-  if (!actionsAvailable) return false;
-  // Check per-type deployment limit (max 2 of each type)
+  
+  // Free deployment from side control point:
+  // - Available if freeDeploymentsRemaining > 0 AND no non-deployment action taken yet
+  // - MUST be used before any move/attack/rotate, otherwise forfeited
+  const hasFreeDeployment = state.freeDeploymentsRemaining > 0 && !state.hasActedThisTurn;
+  
+  // Can deploy if:
+  // 1. Has free deployment available (doesn't consume action), OR
+  // 2. Has actions remaining (consumes 1 action)
+  if (!hasFreeDeployment && player.actionsRemaining <= 0) return false;
+  
+  // Check per-type deployment limit (max 3 of each type)
   const deploymentCounts = player.deploymentCounts ?? {};
   const currentTypeCount = deploymentCounts[normalized] ?? 0;
   if (currentTypeCount >= MAX_DEPLOYMENTS_PER_TYPE) return false;
@@ -87,17 +96,30 @@ export function applyDeployUnit(state: GameState, unitKey: string, targetPos: Po
   const unitId = `${state.currentPlayer}-${String(normalized)}-${Date.now()}`;
   const newUnit: Unit = { id: unitId, ownerId: state.currentPlayer, stats: { ...unitStats }, position: { row: targetPos.row, col: targetPos.col }, actedThisTurn: true };
   const newGrid = state.grid.map((row, r) => r === targetPos.row - 1 ? row.map((tile, c) => c === targetPos.col - 1 ? { ...tile, unit: newUnit } : tile) : row);
+  
+  // Check if using free deployment (from side control point buff)
+  const hasFreeDeployment = state.freeDeploymentsRemaining > 0 && !state.hasActedThisTurn;
+  
   // Increment per-type count
   const playerIndex = state.currentPlayer;
   const players = state.players.map((p, i) => {
     if (i !== playerIndex) return p;
     const currentCounts = p.deploymentCounts ?? {};
     const newCounts = { ...currentCounts, [normalized]: (currentCounts[normalized] ?? 0) + 1 };
-    // Decrement actionsRemaining by 1 (minimum 0)
-    const newActionsRemaining = Math.max(0, (p.actionsRemaining ?? 1) - 1);
+    // If using free deployment, don't consume action
+    // Otherwise, decrement actionsRemaining by 1
+    const newActionsRemaining = hasFreeDeployment 
+      ? p.actionsRemaining 
+      : Math.max(0, (p.actionsRemaining ?? 1) - 1);
     return { ...p, deploymentCounts: newCounts, actionsRemaining: newActionsRemaining };
   });
-  return { ...state, grid: newGrid, players };
+  
+  // Decrement free deployment counter if used
+  const newFreeDeploymentsRemaining = hasFreeDeployment 
+    ? state.freeDeploymentsRemaining - 1 
+    : state.freeDeploymentsRemaining;
+  
+  return { ...state, grid: newGrid, players, freeDeploymentsRemaining: newFreeDeploymentsRemaining };
 }
 
 export function canMove(state: GameState, unitId: string, target: Position): boolean {
@@ -158,7 +180,8 @@ export function applyMove(state: GameState, unitId: string, target: Position): G
       ? { ...p, actionsRemaining: Math.max(0, (p.actionsRemaining ?? 1) - 1) }
       : p
   );
-  return { ...state, grid: newGrid, players };
+  // Mark that a non-deployment action was taken (forfeits free deployment)
+  return { ...state, grid: newGrid, players, hasActedThisTurn: true };
 }
 
 export function canRotate(state: GameState, unitId: string, targetPos: Position): boolean {
@@ -266,7 +289,8 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
       ? { ...p, actionsRemaining: Math.max(0, (p.actionsRemaining ?? 1) - 1) }
       : p
   );
-  return { ...state, grid: newGrid, players };
+  // Mark that a non-deployment action was taken (forfeits free deployment)
+  return { ...state, grid: newGrid, players, hasActedThisTurn: true };
 }
 
 function hasLineOfSight(state: GameState, from: Position, to: Position): boolean {
@@ -435,7 +459,8 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
       ? { ...p, actionsRemaining: Math.max(0, (p.actionsRemaining ?? 1) - 1) }
       : p
   );
-  return { ...state, grid: newGrid, players };
+  // Mark that a non-deployment action was taken (forfeits free deployment)
+  return { ...state, grid: newGrid, players, hasActedThisTurn: true };
 }
 
 export function canAttack(state: GameState, attackerId: string, targetPos: Position): boolean {
