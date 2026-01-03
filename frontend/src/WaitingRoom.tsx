@@ -47,6 +47,14 @@ export const WaitingRoom: React.FC = () => {
   }, [gameId]);
 
   const handleCancel = () => {
+    // Tell server to cancel the game
+    try {
+      const socket = getSocket();
+      socket.emit('CANCEL_GAME', { gameId });
+    } catch {
+      // Socket not connected, just clean up locally
+    }
+    
     // Clear session and return to lobby
     localStorage.removeItem('novusx.gameId');
     localStorage.removeItem('novusx.playerId');

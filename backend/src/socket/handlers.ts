@@ -65,6 +65,49 @@ export function registerSocketHandlers(io: IOServer, manager: GameManager): void
     });
 
     // =========================================================================
+    // CANCEL_GAME - Cancel a game before anyone joins
+    // =========================================================================
+    socket.on('CANCEL_GAME', async (payload: { gameId: string }) => {
+      if (!socket.data.user) {
+        socket.emit('ERROR', { message: 'Unauthenticated socket' });
+        return;
+      }
+      
+      try {
+        const game = manager.getGame(payload.gameId);
+        if (!game) {
+          // Game doesn't exist, but that's fine - clean up user mapping anyway
+          socket.emit('GAME_CANCELLED', { gameId: payload.gameId });
+          return;
+        }
+
+        // Only the creator can cancel, and only if no one else joined
+        if (game.getUserId(0) !== user.userId) {
+          throw new Error('Only the game creator can cancel');
+        }
+
+        if (game.hasPlayer(1)) {
+          throw new Error('Cannot cancel - another player has joined. Use LEAVE_GAME instead.');
+        }
+
+        console.log(`[Cancel] User ${user.userId} cancelled game ${game.id}`);
+        
+        // Clean up the game
+        manager.endGame(game.id);
+        
+        socket.emit('GAME_CANCELLED', { gameId: payload.gameId });
+        
+        // Broadcast updated lobby
+        io.emit('AVAILABLE_GAMES', { 
+          type: 'AVAILABLE_GAMES', 
+          games: manager.listAvailableGames() 
+        });
+      } catch (err: any) {
+        socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
+      }
+    });
+
+    // =========================================================================
     // JOIN_GAME - Join an existing PvP game
     // =========================================================================
     socket.on('JOIN_GAME', async (payload: { gameId: string }, cb?: (resp: any) => void) => {
