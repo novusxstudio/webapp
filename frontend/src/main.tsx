@@ -103,14 +103,67 @@ function useAuth(): AuthState & { signIn: (username: string) => Promise<void>; s
 function SocketProvider({ children, token }: { children: React.ReactNode; token: string }) {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checkedActiveGame, setCheckedActiveGame] = useState(false);
 
   useEffect(() => {
     if (!token) return;
 
     connectSocket(token)
-      .then(() => {
+      .then((socket) => {
         setConnected(true);
         setError(null);
+        
+        // Check for active game on connect
+        const onActiveGameFound = (data: { gameId: string; playerId: number; state: any; reconnectToken?: string }) => {
+          console.log('[SOCKET] Active game found:', data.gameId);
+          
+          // Store game data
+          localStorage.setItem('novusx.gameId', data.gameId);
+          localStorage.setItem('novusx.playerId', String(data.playerId));
+          if (data.state) {
+            localStorage.setItem('novusx.state', JSON.stringify(data.state));
+          }
+          if (data.reconnectToken) {
+            localStorage.setItem('novusx.reconnectToken', data.reconnectToken);
+          }
+          
+          // Navigate to game
+          window.location.hash = '#/game';
+          setCheckedActiveGame(true);
+        };
+        
+        const onNoActiveGame = () => {
+          console.log('[SOCKET] No active game');
+          setCheckedActiveGame(true);
+        };
+        
+        socket.once('ACTIVE_GAME_FOUND', onActiveGameFound);
+        socket.once('NO_ACTIVE_GAME', onNoActiveGame);
+        
+        // Also handle auto-reconnect from the server
+        socket.on('RECONNECTED', (data: { gameId: string; playerId: number; state: any; reconnectToken?: string }) => {
+          console.log('[SOCKET] Auto-reconnected to game:', data.gameId);
+          
+          localStorage.setItem('novusx.gameId', data.gameId);
+          localStorage.setItem('novusx.playerId', String(data.playerId));
+          if (data.state) {
+            localStorage.setItem('novusx.state', JSON.stringify(data.state));
+          }
+          if (data.reconnectToken) {
+            localStorage.setItem('novusx.reconnectToken', data.reconnectToken);
+          }
+          
+          window.location.hash = '#/game';
+          setCheckedActiveGame(true);
+        });
+        
+        // Ask server if we have an active game
+        socket.emit('CHECK_ACTIVE_GAME');
+        
+        // Timeout fallback - if no response in 2s, assume no active game
+        setTimeout(() => {
+          setCheckedActiveGame(true);
+        }, 2000);
       })
       .catch((err) => {
         console.error('[SOCKET] Failed to connect:', err);
@@ -149,7 +202,7 @@ function SocketProvider({ children, token }: { children: React.ReactNode; token:
     );
   }
 
-  if (!connected) {
+  if (!connected || !checkedActiveGame) {
     return (
       <div style={{
         display: 'flex',
@@ -158,7 +211,7 @@ function SocketProvider({ children, token }: { children: React.ReactNode; token:
         minHeight: '100vh',
         fontFamily: 'system-ui, sans-serif',
       }}>
-        <p>Connecting to server...</p>
+        <p>{connected ? 'Checking for active game...' : 'Connecting to server...'}</p>
       </div>
     );
   }
