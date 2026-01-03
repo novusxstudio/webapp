@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { RulesModal } from '../ui/RulesModal';
-import { disconnectSocket } from './socket';
 
 const containerStyle: React.CSSProperties = {
   display: 'flex',
@@ -44,22 +43,6 @@ const pageStyle: React.CSSProperties = {
 export const LobbyPage: React.FC = () => {
   const [isRulesOpen, setIsRulesOpen] = useState<boolean>(false);
 
-  const handleLogout = () => {
-    // Clear auth token and session data
-    localStorage.removeItem('novusx.authToken');
-    localStorage.removeItem('novusx.gameId');
-    localStorage.removeItem('novusx.playerId');
-    localStorage.removeItem('novusx.reconnectToken');
-    localStorage.removeItem('novusx.state');
-    localStorage.removeItem('novusx.botId');
-    
-    // Disconnect socket
-    disconnectSocket();
-    
-    // Reload to show login screen
-    window.location.reload();
-  };
-
   return (
     <div style={containerStyle}>
       <div style={pageStyle}>
@@ -71,22 +54,6 @@ export const LobbyPage: React.FC = () => {
             <button style={buttonStyle} onClick={() => setIsRulesOpen(true)}>Rules</button>
             <button style={buttonStyle} onClick={() => window.location.hash = '#/play'}>Play Game</button>
           </div>
-        </div>
-        <div style={{ textAlign: 'center', marginTop: '16px' }}>
-          <button
-            onClick={handleLogout}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '6px',
-              border: '1px solid #ef4444',
-              background: '#fee2e2',
-              color: '#b91c1c',
-              cursor: 'pointer',
-              fontSize: '14px',
-            }}
-          >
-            Sign Out
-          </button>
         </div>
       </div>
       {isRulesOpen && <RulesModal onClose={() => setIsRulesOpen(false)} />}

@@ -22,9 +22,11 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "dev:token": "ts-node src/dev/generateTestToken.ts"
+    "dev:token": "ts-node src/dev/generateTestToken.ts",
+    "auth-server": "ts-node src/auth-server/server.ts"
   },
   "dependencies": {
+    "@auth/core": "^0.37.0",
     "@prisma/client": "^5.10.0",
     "dotenv": "^16.4.0",
     "jose": "^5.10.0",
