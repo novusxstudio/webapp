@@ -340,7 +340,7 @@ export class GameInstance {
         const strict: StrictAction = { type: 'MOVE', unitId: action.unitId, to: action.target };
         newState = applyStrictAction(newState, strict);
         newState = { ...newState, lastAction: { type: 'MOVE', by: fromPlayer, unitId: action.unitId, to: action.target } };
-        newState = this.decrementActions(newState);
+        // NOTE: applyMove in rules.ts already decrements actions and sets hasActedThisTurn
         break;
       }
       case 'ATTACK': {
@@ -349,24 +349,19 @@ export class GameInstance {
         const strict: StrictAction = { type: 'ATTACK', unitId: action.attackerId, targetId: defender.id };
         newState = applyStrictAction(newState, strict);
         newState = { ...newState, lastAction: { type: 'ATTACK', by: fromPlayer, unitId: action.attackerId, targetId: defender.id } };
-        newState = this.decrementActions(newState);
+        // NOTE: applyAttack in rules.ts already decrements actions and sets hasActedThisTurn
         break;
       }
       case 'ROTATE': {
         newState = applyRotate(newState, action.unitId, action.targetPos);
         newState = { ...newState, lastAction: { type: 'ROTATE', by: fromPlayer, unitId: action.unitId, to: action.targetPos } };
-        newState = this.decrementActions(newState);
+        // NOTE: applyRotate in rules.ts already decrements actions and sets hasActedThisTurn
         break;
       }
       case 'DEPLOY': {
         newState = applyDeployUnit(newState, action.unitType as any, action.targetPos);
         newState = { ...newState, lastAction: { type: 'DEPLOY', by: fromPlayer, unitType: action.unitType as any, to: action.targetPos } };
-        const freeAvailable = newState.freeDeploymentsRemaining > 0 && !newState.hasActedThisTurn;
-        if (freeAvailable) {
-          newState = { ...newState, freeDeploymentsRemaining: newState.freeDeploymentsRemaining - 1 };
-        } else {
-          newState = this.decrementActions(newState);
-        }
+        // NOTE: applyDeployUnit in rules.ts handles free deployment logic and action consumption
         break;
       }
       case 'END_TURN': {
@@ -381,20 +376,6 @@ export class GameInstance {
     newState = this.maybeEndTurnOnZero(newState);
     this.state = newState;
     return this.state;
-  }
-
-  private decrementActions(state: GameState): GameState {
-    const current = state.currentPlayer;
-    const updatedPlayers = state.players.map((p, i) => {
-      if (i !== current) return p;
-      return { ...p, actionsRemaining: p.actionsRemaining - 1 };
-    });
-    return {
-      ...state,
-      players: updatedPlayers,
-      hasActedThisTurn: true,
-      freeDeploymentsRemaining: 0,
-    };
   }
 
   private maybeEndTurnOnZero(state: GameState): GameState {
