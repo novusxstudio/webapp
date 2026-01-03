@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { RulesModal } from '../ui/RulesModal';
 
+interface LobbyPageProps {
+  onSignOut?: () => void;
+}
+
 const containerStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
@@ -16,7 +20,7 @@ const buttonStyle: React.CSSProperties = {
   color: '#1d4ed8', 
   cursor: 'pointer'
 };
-const headerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center', marginTop: '12px' };
+const headerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' };
 const actionsStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center', gap: '12px' };
 const cardStyle: React.CSSProperties = {
   padding: '16px',
@@ -37,10 +41,8 @@ const pageStyle: React.CSSProperties = {
  * LobbyPage: Entry screen for players (PvP only).
  * - Opens the Rules modal for quick reference.
  * - Navigates to Play to create/join games.
- * 
- * BOT CHALLENGE: Disabled for PvP-only mode
  */
-export const LobbyPage: React.FC = () => {
+export const LobbyPage: React.FC<LobbyPageProps> = ({ onSignOut }) => {
   const [isRulesOpen, setIsRulesOpen] = useState<boolean>(false);
 
   return (
@@ -48,6 +50,22 @@ export const LobbyPage: React.FC = () => {
       <div style={pageStyle}>
         <div style={headerStyle}>
           <h2 style={{ margin: 0 }}>NovusX Lobby</h2>
+          {onSignOut && (
+            <button
+              onClick={onSignOut}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #d1d5db',
+                background: '#f9fafb',
+                color: '#6b7280',
+                cursor: 'pointer',
+                fontSize: '13px',
+              }}
+            >
+              Sign Out
+            </button>
+          )}
         </div>
         <div style={cardStyle}>
           <div style={actionsStyle}>
