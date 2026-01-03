@@ -8,38 +8,96 @@ import { PlayPage } from './PlayPage'
 import { JoinPage } from './JoinPage'
 import { connectSocket } from './socket'
 
-// =============================================================================
-// AUTH INTEGRATION
-// =============================================================================
-// TODO: Integrate Auth.js for production authentication
-// Replace useAuth() with actual Auth.js session hook
+// Server URL from environment
+const SERVER_URL = import.meta.env.VITE_SERVER_URL as string;
 
-/**
- * useAuth: Placeholder for Auth.js integration
- * 
- * Replace with:
- * import { useSession } from "next-auth/react"
- * const { data: session, status } = useSession()
- * return { token: session?.accessToken, loading: status === "loading" }
- */
-function useAuth(): { token: string | null; loading: boolean; error: string | null } {
-  const [state, setState] = useState<{ token: string | null; loading: boolean; error: string | null }>({
+// =============================================================================
+// AUTH STATE
+// =============================================================================
+
+interface AuthState {
+  token: string | null;
+  user: { id: string; email: string } | null;
+  loading: boolean;
+  error: string | null;
+}
+
+function useAuth(): AuthState & { signIn: (username: string) => Promise<void>; signOut: () => void } {
+  const [state, setState] = useState<AuthState>({
     token: null,
+    user: null,
     loading: true,
     error: null,
   });
 
+  // Check for existing token on mount
   useEffect(() => {
-    // TODO: Replace with Auth.js session check
-    // For now, show sign-in required
-    setState({ token: null, loading: false, error: null });
+    const storedToken = localStorage.getItem('novusx.token');
+    const storedUser = localStorage.getItem('novusx.user');
+    
+    if (storedToken && storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        setState({ token: storedToken, user, loading: false, error: null });
+      } catch {
+        // Invalid stored data, clear it
+        localStorage.removeItem('novusx.token');
+        localStorage.removeItem('novusx.user');
+        setState({ token: null, user: null, loading: false, error: null });
+      }
+    } else {
+      setState({ token: null, user: null, loading: false, error: null });
+    }
   }, []);
 
-  return state;
+  const signIn = async (username: string) => {
+    setState(s => ({ ...s, loading: true, error: null }));
+    
+    try {
+      const response = await fetch(`${SERVER_URL}/api/auth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Sign in failed');
+      }
+
+      const data = await response.json();
+      
+      // Store in localStorage
+      localStorage.setItem('novusx.token', data.token);
+      localStorage.setItem('novusx.user', JSON.stringify(data.user));
+      
+      setState({
+        token: data.token,
+        user: data.user,
+        loading: false,
+        error: null,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Sign in failed';
+      setState(s => ({ ...s, loading: false, error: message }));
+    }
+  };
+
+  const signOut = () => {
+    localStorage.removeItem('novusx.token');
+    localStorage.removeItem('novusx.user');
+    localStorage.removeItem('novusx.gameId');
+    localStorage.removeItem('novusx.playerId');
+    localStorage.removeItem('novusx.state');
+    setState({ token: null, user: null, loading: false, error: null });
+    window.location.reload();
+  };
+
+  return { ...state, signIn, signOut };
 }
 
 // =============================================================================
-// SOCKET CONNECTION MANAGER
+// SOCKET CONNECTION
 // =============================================================================
 
 function SocketProvider({ children, token }: { children: React.ReactNode; token: string }) {
@@ -112,16 +170,7 @@ function SocketProvider({ children, token }: { children: React.ReactNode; token:
 // ROUTER
 // =============================================================================
 
-/**
- * Router: Minimal hash-based router for the SPA.
- * Routes:
- *   #/lobby - Main menu
- *   #/play - Create/join options
- *   #/join - Join existing game
- *   #/waiting - Waiting for opponent
- *   #/game - Active game
- */
-function Router() {
+function Router({ onSignOut }: { onSignOut: () => void }) {
   const [route, setRoute] = useState<string>(window.location.hash || '#/lobby');
   
   useEffect(() => {
@@ -135,7 +184,116 @@ function Router() {
   if (route.startsWith('#/play')) return <PlayPage />;
   if (route.startsWith('#/join')) return <JoinPage />;
   
-  return <LobbyPage />;
+  return <LobbyPage onSignOut={onSignOut} />;
+}
+
+// =============================================================================
+// SIGN IN PAGE
+// =============================================================================
+
+function SignInPage({ onSignIn, loading, error }: { 
+  onSignIn: (username: string) => void; 
+  loading: boolean;
+  error: string | null;
+}) {
+  const [username, setUsername] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (username.trim()) {
+      onSignIn(username.trim());
+    }
+  };
+
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '100vh',
+      gap: '24px',
+      fontFamily: 'system-ui, sans-serif',
+      background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+    }}>
+      <h1 style={{ 
+        color: '#f8fafc', 
+        fontSize: '3rem', 
+        fontWeight: 700,
+        margin: 0,
+        textShadow: '0 2px 10px rgba(0,0,0,0.3)',
+      }}>
+        NovusX
+      </h1>
+      <p style={{ color: '#94a3b8', margin: 0 }}>Enter your username to play</p>
+      
+      <form onSubmit={handleSubmit} style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+        width: '100%',
+        maxWidth: '300px',
+      }}>
+        <input
+          type="text"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="Username"
+          disabled={loading}
+          maxLength={20}
+          style={{
+            padding: '14px 18px',
+            borderRadius: '8px',
+            border: '2px solid #334155',
+            background: '#1e293b',
+            color: '#f8fafc',
+            fontSize: '16px',
+            outline: 'none',
+            transition: 'border-color 0.2s',
+          }}
+          onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+          onBlur={(e) => e.target.style.borderColor = '#334155'}
+        />
+        <button
+          type="submit"
+          disabled={loading || !username.trim()}
+          style={{
+            padding: '14px 24px',
+            borderRadius: '8px',
+            border: 'none',
+            background: loading ? '#475569' : '#3b82f6',
+            color: 'white',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            fontSize: '16px',
+            fontWeight: 600,
+            transition: 'background 0.2s',
+          }}
+        >
+          {loading ? 'Signing in...' : 'Play'}
+        </button>
+      </form>
+
+      {error && (
+        <p style={{ 
+          color: '#f87171', 
+          margin: 0,
+          padding: '12px 16px',
+          background: 'rgba(248, 113, 113, 0.1)',
+          borderRadius: '8px',
+        }}>
+          {error}
+        </p>
+      )}
+
+      <p style={{ 
+        color: '#64748b', 
+        fontSize: '12px',
+        marginTop: '24px',
+      }}>
+        No account needed • Just enter a username
+      </p>
+    </div>
+  );
 }
 
 // =============================================================================
@@ -143,7 +301,7 @@ function Router() {
 // =============================================================================
 
 function Root() {
-  const { token, loading } = useAuth();
+  const { token, user, loading, error, signIn, signOut } = useAuth();
 
   // Loading state
   if (loading) {
@@ -154,6 +312,8 @@ function Root() {
         justifyContent: 'center',
         minHeight: '100vh',
         fontFamily: 'system-ui, sans-serif',
+        background: '#0f172a',
+        color: '#f8fafc',
       }}>
         <p>Loading...</p>
       </div>
@@ -161,49 +321,20 @@ function Root() {
   }
 
   // Not authenticated - show sign in
-  if (!token) {
+  if (!token || !user) {
     return (
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        gap: '16px',
-        fontFamily: 'system-ui, sans-serif',
-        background: '#f8fafc',
-      }}>
-        <h1 style={{ color: '#1e293b', fontSize: '2.5rem', fontWeight: 700 }}>NovusX</h1>
-        <p style={{ color: '#64748b' }}>Sign in to play</p>
-        
-        {/* TODO: Replace with Auth.js SignIn button */}
-        <button
-          onClick={() => {
-            // TODO: Integrate Auth.js signIn()
-            alert('Auth.js integration required');
-          }}
-          style={{
-            padding: '12px 24px',
-            borderRadius: '8px',
-            border: 'none',
-            background: '#3b82f6',
-            color: 'white',
-            cursor: 'pointer',
-            fontSize: '16px',
-            fontWeight: 600,
-            marginTop: '16px',
-          }}
-        >
-          Sign In
-        </button>
-      </div>
+      <SignInPage 
+        onSignIn={signIn} 
+        loading={loading}
+        error={error}
+      />
     );
   }
 
   // Authenticated - wrap router in socket provider
   return (
     <SocketProvider token={token}>
-      <Router />
+      <Router onSignOut={signOut} />
     </SocketProvider>
   );
 }
