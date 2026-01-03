@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { socket } from './socket';
+import { getSocket } from './socket';
 
 interface AvailableGamesMessage { type: 'AVAILABLE_GAMES'; games: string[] }
-interface JoinGameResponse { gameId: string; playerId: 0 | 1; state?: any; reconnectToken: string }
+interface JoinGameResponse { gameId: string; playerId: 0 | 1; state?: any; reconnectToken?: string }
 
 const container: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '600px', margin: '24px auto' };
 const header: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center' };
@@ -23,14 +23,32 @@ export const JoinPage: React.FC = () => {
   const [joinId, setJoinId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [games, setGames] = useState<string[]>([]);
+  const [joining, setJoining] = useState(false);
 
   useEffect(() => {
+    let socket;
+    try {
+      socket = getSocket();
+    } catch {
+      setError('Not connected to server');
+      return;
+    }
+
     const onError = (payload: { message: string }) => setError(payload?.message ?? 'Unknown error');
-    const onAvailable = (msg: AvailableGamesMessage) => { if (msg && msg.type === 'AVAILABLE_GAMES') setGames(msg.games || []); };
+    const onAvailable = (msg: AvailableGamesMessage) => {
+      if (msg && msg.type === 'AVAILABLE_GAMES') {
+        setGames(msg.games || []);
+      }
+    };
+
     socket.on('ERROR', onError);
     socket.on('AVAILABLE_GAMES', onAvailable);
     socket.emit('LIST_GAMES');
-    return () => { socket.off('ERROR', onError); socket.off('AVAILABLE_GAMES', onAvailable); };
+
+    return () => {
+      socket.off('ERROR', onError);
+      socket.off('AVAILABLE_GAMES', onAvailable);
+    };
   }, []);
 
   /**
@@ -39,9 +57,14 @@ export const JoinPage: React.FC = () => {
   const navigateToGame = (resp: JoinGameResponse) => {
     localStorage.setItem('novusx.gameId', resp.gameId);
     localStorage.setItem('novusx.playerId', String(resp.playerId));
-    localStorage.setItem('novusx.reconnectToken', resp.reconnectToken);
-    localStorage.removeItem('novusx.botId'); // Clear botId for human games
-    if (resp.state) { try { localStorage.setItem('novusx.state', JSON.stringify(resp.state)); } catch {} }
+    if (resp.reconnectToken) {
+      localStorage.setItem('novusx.reconnectToken', resp.reconnectToken);
+    }
+    // Clear botId for human games
+    localStorage.removeItem('novusx.botId');
+    if (resp.state) {
+      try { localStorage.setItem('novusx.state', JSON.stringify(resp.state)); } catch {}
+    }
     window.location.hash = '#/game';
   };
 
@@ -50,10 +73,22 @@ export const JoinPage: React.FC = () => {
    */
   const joinById = (id: string) => {
     setError(null);
-    socket.emit('JOIN_GAME', { gameId: id }, (resp: JoinGameResponse) => {
-      if (!resp || !resp.gameId) { setError('Failed to join game'); return; }
-      navigateToGame(resp);
-    });
+    setJoining(true);
+    
+    try {
+      const socket = getSocket();
+      socket.emit('JOIN_GAME', { gameId: id }, (resp: JoinGameResponse) => {
+        setJoining(false);
+        if (!resp || !resp.gameId) {
+          setError('Failed to join game');
+          return;
+        }
+        navigateToGame(resp);
+      });
+    } catch {
+      setJoining(false);
+      setError('Not connected to server');
+    }
   };
 
   return (
@@ -67,8 +102,19 @@ export const JoinPage: React.FC = () => {
           <div style={section}>
             <div style={title}>Join by ID</div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <input style={input} value={joinId} onChange={(e) => setJoinId(e.target.value)} placeholder="Enter Game ID" />
-              <button style={button} onClick={() => joinById(joinId)} disabled={!joinId}>Join Game</button>
+              <input 
+                style={input} 
+                value={joinId} 
+                onChange={(e) => setJoinId(e.target.value)} 
+                placeholder="Enter Game ID" 
+              />
+              <button 
+                style={{ ...button, opacity: (joining || !joinId) ? 0.7 : 1 }} 
+                onClick={() => joinById(joinId)} 
+                disabled={!joinId || joining}
+              >
+                {joining ? 'Joining...' : 'Join Game'}
+              </button>
             </div>
             {error && <div style={{ color: '#ef4444', marginTop: '8px' }}>{error}</div>}
           </div>
@@ -78,7 +124,13 @@ export const JoinPage: React.FC = () => {
             {games.map((g) => (
               <div key={g} style={listItem}>
                 <span><strong>Game ID:</strong> {g}</span>
-                <button style={button} onClick={() => joinById(g)}>Join</button>
+                <button 
+                  style={{ ...button, opacity: joining ? 0.7 : 1 }} 
+                  onClick={() => joinById(g)}
+                  disabled={joining}
+                >
+                  Join
+                </button>
               </div>
             ))}
           </div>

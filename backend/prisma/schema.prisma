@@ -1,0 +1,53 @@
+// Prisma schema for MVP PvP deployment
+// Database: PostgreSQL (Railway)
+// Mode: WRITE-ONLY - Games run in memory, DB records results only
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model - minimal for now
+// Only stores ID from Auth.js JWT sub claim
+model User {
+  id        String   @id // Auth.js user ID
+  createdAt DateTime @default(now())
+
+  // Games where this user participated
+  gamesAsPlayerA Game[] @relation("PlayerA")
+  gamesAsPlayerB Game[] @relation("PlayerB")
+  gamesWon       Game[] @relation("Winner")
+}
+
+// Game model - records completed games only
+// NOT used for in-progress games (those live in memory)
+model Game {
+  id        String     @id // GameInstance.id
+  createdAt DateTime   @default(now())
+  
+  // Players
+  playerAId String
+  playerBId String
+  playerA   User       @relation("PlayerA", fields: [playerAId], references: [id])
+  playerB   User       @relation("PlayerB", fields: [playerBId], references: [id])
+  
+  // Result
+  result    GameResult
+  winnerId  String?    // null if draw
+  winner    User?      @relation("Winner", fields: [winnerId], references: [id])
+  
+  // Stats (optional, for future analytics)
+  turnCount Int?
+}
+
+enum GameResult {
+  WIN        // One player won
+  DRAW       // Game ended in draw
+  ABANDONED  // Player disconnected/forfeited
+}
+
+// DEFERRED: Move history, reconnect tokens, matchmaking, ELO

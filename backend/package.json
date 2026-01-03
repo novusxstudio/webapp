@@ -1,19 +1,39 @@
 {
   "name": "novusx-backend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "commonjs",
   "scripts": {
     "dev": "ts-node src/server.ts",
-    "build": "tsc -p .",
-    "start": "node dist/src/server.js",
-    "test": "ts-node src/tests/rules.test.ts"
+    "dev:pvp": "ts-node src/server.pvp.ts",
+    "dev:auth-test": "ts-node src/dev/simpleAuthServer.ts",
+    "dev:test-server": "ts-node src/dev/testServer.ts",
+    "build": "tsc -p . && prisma generate",
+    "start": "node dist/src/server.pvp.js",
+    "start:legacy": "node dist/src/server.js",
+    "test": "ts-node src/tests/rules.test.ts",
+    "test:jwt": "ts-node src/dev/jwtTest.ts",
+    "test:auth": "ts-node src/dev/authTest.ts",
+    "test:socket": "ts-node src/dev/socketAuthTest.ts",
+    "test:authority": "ts-node src/dev/authorityTest.ts",
+    "test:db-write": "ts-node src/dev/dbWriteTest.ts",
+    "test:reconnect": "ts-node src/dev/reconnectTest.ts",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "dev:token": "ts-node src/dev/generateTestToken.ts"
   },
   "dependencies": {
-    "socket.io": "^4.7.2"
+    "@prisma/client": "^5.10.0",
+    "dotenv": "^16.4.0",
+    "jose": "^5.10.0",
+    "socket.io": "^4.7.2",
+    "socket.io-client": "^4.7.2"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "prisma": "^5.10.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.3"
   }
