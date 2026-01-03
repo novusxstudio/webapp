@@ -8,7 +8,7 @@
     "dev:pvp": "ts-node src/server.pvp.ts",
     "dev:auth-test": "ts-node src/dev/simpleAuthServer.ts",
     "dev:test-server": "ts-node src/dev/testServer.ts",
-    "build": "tsc -p . && prisma generate",
+    "build": "npx tsc -p . && npx prisma generate",
     "start": "node dist/src/server.pvp.js",
     "start:legacy": "node dist/src/server.js",
     "test": "ts-node src/tests/rules.test.ts",
