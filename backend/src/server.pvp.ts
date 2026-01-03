@@ -147,9 +147,7 @@ registerSocketHandlers(io, manager);
 // Graceful shutdown
 async function shutdown() {
   console.log('Shutting down...');
-  if (prisma) {
-    await prisma.$disconnect();
-  }
+  await prisma.$disconnect();
   server.close();
   process.exit(0);
 }
