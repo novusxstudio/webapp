@@ -890,6 +890,230 @@ function runTests() {
   });
   
   // ==========================================================================
+  // FREE DEPLOYMENT USAGE TESTS
+  // ==========================================================================
+  console.log('\n=== Free Deployment Usage Tests ===');
+  
+  test('Free deployment does not consume action', () => {
+    let state = createTestState({ currentPlayer: 1 });
+    // Place player 1's unit on left side control point
+    state = placeUnit(state, { row: 3, col: 1 }, 1, 'swordsman');
+    // End player 0's turn to give player 1 the buffs
+    state = { ...state, currentPlayer: 0 };
+    state = endTurn(state);
+    // Player 1 should have 1 action and 1 free deployment
+    assert.equal(state.currentPlayer, 1);
+    assert.equal(state.players[1].actionsRemaining, 1);
+    assert.equal(state.freeDeploymentsRemaining, 1);
+    assert.equal(state.hasActedThisTurn, false);
+    // Deploy using free deployment
+    state = applyDeployUnit(state, 'archer', { row: 5, col: 3 });
+    // Should still have 1 action (not consumed), free deployment used
+    assert.equal(state.players[1].actionsRemaining, 1, 'Action should NOT be consumed by free deployment');
+    assert.equal(state.freeDeploymentsRemaining, 0, 'Free deployment should be decremented');
+    assert.equal(state.currentPlayer, 1, 'Should still be player 1\'s turn');
+  });
+  
+  test('Second deployment after free deployment consumes action', () => {
+    let state = createTestState({ currentPlayer: 1 });
+    // Give player 1: side control (free deploy) + center control (extra action)
+    state = placeUnit(state, { row: 3, col: 1 }, 1, 'swordsman');
+    state = placeUnit(state, { row: 3, col: 3 }, 1, 'shieldman');
+    state = { ...state, currentPlayer: 0 };
+    state = endTurn(state);
+    // Player 1 should have 2 actions and 1 free deployment
+    assert.equal(state.players[1].actionsRemaining, 2);
+    assert.equal(state.freeDeploymentsRemaining, 1);
+    // First deploy: free
+    state = applyDeployUnit(state, 'archer', { row: 5, col: 1 });
+    assert.equal(state.players[1].actionsRemaining, 2, 'First deploy is free');
+    assert.equal(state.freeDeploymentsRemaining, 0);
+    // Second deploy: costs action
+    state = applyDeployUnit(state, 'cavalry', { row: 5, col: 2 });
+    assert.equal(state.players[1].actionsRemaining, 1, 'Second deploy costs 1 action');
+    assert.equal(state.currentPlayer, 1, 'Still player 1\'s turn');
+  });
+  
+  test('Free deployment is forfeited if non-deployment action taken first', () => {
+    let state = createTestState({ currentPlayer: 1 });
+    // Give player 1 side control (free deploy)
+    state = placeUnit(state, { row: 3, col: 1 }, 1, 'swordsman');
+    // Also give player 1 center control for extra action (so they can move AND still deploy)
+    state = placeUnit(state, { row: 3, col: 3 }, 1, 'shieldman');
+    state = { ...state, currentPlayer: 0 };
+    state = endTurn(state);
+    // Player 1 has 2 actions, 1 free deployment
+    assert.equal(state.players[1].actionsRemaining, 2);
+    assert.equal(state.freeDeploymentsRemaining, 1);
+    assert.equal(state.hasActedThisTurn, false);
+    // Move the shieldman (non-deployment action)
+    state = applyMove(state, state.grid[2][2].unit!.id, { row: 4, col: 3 });
+    // Free deployment should be forfeited (hasActedThisTurn = true)
+    assert.equal(state.hasActedThisTurn, true, 'hasActedThisTurn should be true after move');
+    assert.equal(state.players[1].actionsRemaining, 1, 'Action consumed by move');
+    // Now deploy - should consume action, not use "free" deployment
+    state = applyDeployUnit(state, 'archer', { row: 5, col: 5 });
+    assert.equal(state.players[1].actionsRemaining, 0, 'Deploy after move should consume action');
+    assert.equal(state.freeDeploymentsRemaining, 1, 'Free deployment counter unchanged (forfeited, not used)');
+  });
+  
+  test('Cannot use free deployment after attacking', () => {
+    let state = createTestState({ currentPlayer: 1 });
+    // Give player 1 side control (free deploy) + center for extra action
+    state = placeUnit(state, { row: 3, col: 1 }, 1, 'swordsman');
+    state = placeUnit(state, { row: 3, col: 3 }, 1, 'archer');
+    // Place an enemy unit to attack
+    state = placeUnit(state, { row: 2, col: 3 }, 0, 'cavalry');
+    state = { ...state, currentPlayer: 0 };
+    state = endTurn(state);
+    // Player 1 has 2 actions, 1 free deployment
+    assert.equal(state.freeDeploymentsRemaining, 1);
+    assert.equal(state.hasActedThisTurn, false);
+    // Attack with archer (non-deployment action)
+    const archerId = state.grid[2][2].unit!.id;
+    state = applyAttack(state, archerId, { row: 2, col: 3 });
+    // Free deployment forfeited
+    assert.equal(state.hasActedThisTurn, true);
+    // Deploy should now cost action
+    state = applyDeployUnit(state, 'spearman', { row: 5, col: 1 });
+    assert.equal(state.players[1].actionsRemaining, 0, 'Deploy after attack costs action');
+  });
+  
+  // ==========================================================================
+  // EXTRA ACTION USAGE TESTS
+  // ==========================================================================
+  console.log('\n=== Extra Action Usage Tests ===');
+  
+  test('Extra action from center: can perform 2 moves', () => {
+    let state = createTestState({ currentPlayer: 1 });
+    // Give player 1 center control for extra action
+    state = placeUnit(state, { row: 3, col: 3 }, 1, 'cavalry');
+    state = placeUnit(state, { row: 4, col: 2 }, 1, 'swordsman');
+    state = { ...state, currentPlayer: 0 };
+    state = endTurn(state);
+    // Player 1 has 2 actions
+    assert.equal(state.players[1].actionsRemaining, 2);
+    // First move: cavalry
+    const cavalryId = state.grid[2][2].unit!.id;
+    state = applyMove(state, cavalryId, { row: 2, col: 3 });
+    assert.equal(state.players[1].actionsRemaining, 1, 'First move consumes 1 action');
+    assert.equal(state.currentPlayer, 1, 'Still player 1\'s turn');
+    // Second move: swordsman
+    const swordsmanId = state.grid[3][1].unit!.id;
+    state = applyMove(state, swordsmanId, { row: 4, col: 3 });
+    assert.equal(state.players[1].actionsRemaining, 0, 'Second move consumes 1 action');
+    assert.equal(state.currentPlayer, 1, 'Still player 1\'s turn (can end manually)');
+  });
+  
+  test('Extra action from both sides: can attack then move', () => {
+    let state = createTestState({ currentPlayer: 1 });
+    // Give player 1 both side controls for extra action
+    state = placeUnit(state, { row: 3, col: 1 }, 1, 'swordsman');
+    state = placeUnit(state, { row: 3, col: 5 }, 1, 'archer');
+    // Place enemy to attack
+    state = placeUnit(state, { row: 2, col: 5 }, 0, 'cavalry');
+    state = { ...state, currentPlayer: 0 };
+    state = endTurn(state);
+    // Player 1 has 2 actions
+    assert.equal(state.players[1].actionsRemaining, 2);
+    // Attack with archer
+    const archerId = state.grid[2][4].unit!.id;
+    state = applyAttack(state, archerId, { row: 2, col: 5 });
+    assert.equal(state.players[1].actionsRemaining, 1, 'Attack consumes 1 action');
+    assert.equal(state.currentPlayer, 1, 'Still player 1\'s turn');
+    // Move with swordsman
+    const swordsmanId = state.grid[2][0].unit!.id;
+    state = applyMove(state, swordsmanId, { row: 3, col: 2 });
+    assert.equal(state.players[1].actionsRemaining, 0, 'Move consumes 1 action');
+    assert.equal(state.currentPlayer, 1, 'Still player 1\'s turn');
+  });
+  
+  test('Extra action + free deploy: use free deploy then 2 actions', () => {
+    let state = createTestState({ currentPlayer: 1 });
+    // Give player 1: side control (free deploy) + center (extra action)
+    state = placeUnit(state, { row: 3, col: 1 }, 1, 'swordsman');
+    state = placeUnit(state, { row: 3, col: 3 }, 1, 'archer');
+    state = { ...state, currentPlayer: 0 };
+    state = endTurn(state);
+    // Player 1 has 2 actions + 1 free deployment
+    assert.equal(state.players[1].actionsRemaining, 2);
+    assert.equal(state.freeDeploymentsRemaining, 1);
+    // Free deploy
+    state = applyDeployUnit(state, 'cavalry', { row: 5, col: 3 });
+    assert.equal(state.players[1].actionsRemaining, 2, 'Free deploy does not consume action');
+    assert.equal(state.freeDeploymentsRemaining, 0);
+    // First action: move swordsman
+    const swordsmanId = state.grid[2][0].unit!.id;
+    state = applyMove(state, swordsmanId, { row: 3, col: 2 });
+    assert.equal(state.players[1].actionsRemaining, 1);
+    // Second action: move archer
+    const archerId = state.grid[2][2].unit!.id;
+    state = applyMove(state, archerId, { row: 2, col: 3 });
+    assert.equal(state.players[1].actionsRemaining, 0);
+    assert.equal(state.currentPlayer, 1, 'Still player 1\'s turn');
+  });
+  
+  test('No control points: 1 action, no free deployment', () => {
+    let state = createTestState({ currentPlayer: 1 });
+    // Player 1 has a unit but not on any control point
+    state = placeUnit(state, { row: 4, col: 3 }, 1, 'swordsman');
+    state = { ...state, currentPlayer: 0 };
+    state = endTurn(state);
+    // Player 1 has 1 action, no free deployment
+    assert.equal(state.players[1].actionsRemaining, 1);
+    assert.equal(state.freeDeploymentsRemaining, 0);
+    // Move
+    const swordsmanId = state.grid[3][2].unit!.id;
+    state = applyMove(state, swordsmanId, { row: 4, col: 2 });
+    assert.equal(state.players[1].actionsRemaining, 0, 'Single action consumed');
+    assert.equal(state.currentPlayer, 1, 'Still player 1\'s turn (can end)');
+  });
+  
+  test('One side only: 1 action + free deployment', () => {
+    let state = createTestState({ currentPlayer: 1 });
+    // Player 1 controls only left side control point
+    state = placeUnit(state, { row: 3, col: 1 }, 1, 'swordsman');
+    state = { ...state, currentPlayer: 0 };
+    state = endTurn(state);
+    // 1 action (no center/both sides bonus) + 1 free deployment
+    assert.equal(state.players[1].actionsRemaining, 1);
+    assert.equal(state.freeDeploymentsRemaining, 1);
+    // Free deploy
+    state = applyDeployUnit(state, 'archer', { row: 5, col: 3 });
+    assert.equal(state.players[1].actionsRemaining, 1, 'Free deploy does not consume action');
+    assert.equal(state.freeDeploymentsRemaining, 0);
+    // Move
+    const swordsmanId = state.grid[2][0].unit!.id;
+    state = applyMove(state, swordsmanId, { row: 3, col: 2 });
+    assert.equal(state.players[1].actionsRemaining, 0);
+  });
+  
+  test('Right side only: also gives free deployment', () => {
+    let state = createTestState({ currentPlayer: 1 });
+    // Player 1 controls only right side control point
+    state = placeUnit(state, { row: 3, col: 5 }, 1, 'archer');
+    state = { ...state, currentPlayer: 0 };
+    state = endTurn(state);
+    // 1 action + 1 free deployment (right side is also a side point)
+    assert.equal(state.players[1].actionsRemaining, 1);
+    assert.equal(state.freeDeploymentsRemaining, 1);
+  });
+  
+  test('hasActedThisTurn resets at start of turn', () => {
+    let state = createTestState();
+    // Player 0 makes a move
+    state = placeUnit(state, { row: 1, col: 3 }, 0, 'swordsman');
+    const unitId = state.grid[0][2].unit!.id;
+    state = applyMove(state, unitId, { row: 2, col: 3 });
+    assert.equal(state.hasActedThisTurn, true);
+    // End turn
+    state = endTurn(state);
+    // hasActedThisTurn should reset for new player
+    assert.equal(state.hasActedThisTurn, false);
+    assert.equal(state.currentPlayer, 1);
+  });
+  
+  // ==========================================================================
   // CONTROL POINT STATUS TESTS
   // ==========================================================================
   console.log('\n=== Control Point Status Tests ===');
