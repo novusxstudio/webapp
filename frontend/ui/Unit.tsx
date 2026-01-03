@@ -25,7 +25,7 @@ export const Unit: React.FC<UnitProps> = ({ unitId, ownerId, unitSize }) => {
   const getImagePath = (unitType: string): string => {
     // Convert to lowercase and remove spaces for filename
     const filename = unitType.toLowerCase().replace(/\s+/g, '');
-    return `/src/assets/cards/${filename}.png`;
+    return `/cards/${filename}.png`;
   };
 
   /** Provide a short text abbreviation used as a fallback label. */

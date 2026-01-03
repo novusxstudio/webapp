@@ -1,6 +1,7 @@
 import React from 'react';
 import { Unit } from './Unit';
-import flagIcon from '../src/assets/control_points/flag.png';
+
+const flagIcon = '/control_points/flag.png';
 
 interface TileProps {
   row: number;
