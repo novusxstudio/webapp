@@ -60,7 +60,7 @@ function normalizeUnitKey(key: string): keyof typeof UNIT_DATA {
 }
 
 // Maximum deployments per unit type per player
-const MAX_DEPLOYMENTS_PER_TYPE = 2;
+const MAX_DEPLOYMENTS_PER_TYPE = 3;
 
 export function canDeployUnit(state: GameState, unitKey: string, targetPos: Position): boolean {
   // Target tile must be empty

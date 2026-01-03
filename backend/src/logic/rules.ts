@@ -59,7 +59,7 @@ function normalizeUnitKey(key: string): keyof typeof UNIT_DATA {
 }
 
 // Maximum deployments per unit type per player
-const MAX_DEPLOYMENTS_PER_TYPE = 2;
+const MAX_DEPLOYMENTS_PER_TYPE = 3;
 
 export function canDeployUnit(state: GameState, unitKey: string, targetPos: Position): boolean {
   const targetTile = state.grid[targetPos.row - 1][targetPos.col - 1];
@@ -93,7 +93,9 @@ export function applyDeployUnit(state: GameState, unitKey: string, targetPos: Po
     if (i !== playerIndex) return p;
     const currentCounts = p.deploymentCounts ?? {};
     const newCounts = { ...currentCounts, [normalized]: (currentCounts[normalized] ?? 0) + 1 };
-    return { ...p, deploymentCounts: newCounts };
+    // Decrement actionsRemaining by 1 (minimum 0)
+    const newActionsRemaining = Math.max(0, (p.actionsRemaining ?? 1) - 1);
+    return { ...p, deploymentCounts: newCounts, actionsRemaining: newActionsRemaining };
   });
   return { ...state, grid: newGrid, players };
 }
@@ -149,7 +151,14 @@ export function applyMove(state: GameState, unitId: string, target: Position): G
     }
     return row;
   });
-  return { ...state, grid: newGrid };
+  // Decrement actionsRemaining for the current player
+  const playerIndex = state.currentPlayer;
+  const players = state.players.map((p, i) =>
+    i === playerIndex
+      ? { ...p, actionsRemaining: Math.max(0, (p.actionsRemaining ?? 1) - 1) }
+      : p
+  );
+  return { ...state, grid: newGrid, players };
 }
 
 export function canRotate(state: GameState, unitId: string, targetPos: Position): boolean {
@@ -250,7 +259,14 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
   } else {
     throw new Error('Rotate not allowed');
   }
-  return { ...state, grid: newGrid };
+  // Decrement actionsRemaining for the current player
+  const playerIndex = state.currentPlayer;
+  const players = state.players.map((p, i) =>
+    i === playerIndex
+      ? { ...p, actionsRemaining: Math.max(0, (p.actionsRemaining ?? 1) - 1) }
+      : p
+  );
+  return { ...state, grid: newGrid, players };
 }
 
 function hasLineOfSight(state: GameState, from: Position, to: Position): boolean {
@@ -412,7 +428,14 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
     if (rowIndex === targetPos.row - 1 && colIndex === targetPos.col - 1 && removeDefender) unit = null;
     return { ...tile, unit };
   }));
-  return { ...state, grid: newGrid };
+  // Decrement actionsRemaining for the current player
+  const playerIndex = state.currentPlayer;
+  const players = state.players.map((p, i) =>
+    i === playerIndex
+      ? { ...p, actionsRemaining: Math.max(0, (p.actionsRemaining ?? 1) - 1) }
+      : p
+  );
+  return { ...state, grid: newGrid, players };
 }
 
 export function canAttack(state: GameState, attackerId: string, targetPos: Position): boolean {
@@ -622,9 +645,9 @@ export function hasDeploymentsLeft(state: GameState, playerId: number): boolean 
   const counts = player.deploymentCounts ?? {};
   const unitTypes = ['swordsman', 'shieldman', 'axeman', 'cavalry', 'archer', 'spearman'];
   
-  // If any unit type hasn't reached max (2), player can still deploy
+  // If any unit type hasn't reached max, player can still deploy
   for (const unitType of unitTypes) {
-    if ((counts[unitType] ?? 0) < 2) {
+    if ((counts[unitType] ?? 0) < MAX_DEPLOYMENTS_PER_TYPE) {
       return true;
     }
   }
@@ -632,17 +655,16 @@ export function hasDeploymentsLeft(state: GameState, playerId: number): boolean 
 }
 
 /**
- * Count total remaining deployments for a player (12 max total - 2 per type * 6 types)
+ * Count total remaining deployments for a player (18 max total - 3 per type * 6 types)
  */
 export function countRemainingDeployments(state: GameState, playerId: number): number {
   const player = state.players[playerId];
   const counts = player.deploymentCounts ?? {};
   const unitTypes = ['swordsman', 'shieldman', 'axeman', 'cavalry', 'archer', 'spearman'];
-  const maxPerType = 2;
   
   let remaining = 0;
   for (const unitType of unitTypes) {
-    remaining += maxPerType - (counts[unitType] ?? 0);
+    remaining += MAX_DEPLOYMENTS_PER_TYPE - (counts[unitType] ?? 0);
   }
   return remaining;
 }

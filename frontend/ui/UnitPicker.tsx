@@ -2,7 +2,7 @@ import React from 'react';
 import { UNIT_DATA } from '../src/game/units';
 import { getMatchupsForType } from '../src/game/rules';
 
-const MAX_DEPLOYMENTS_PER_TYPE = 2;
+const MAX_DEPLOYMENTS_PER_TYPE = 3;
 
 interface UnitPickerProps {
   selected: 'Swordsman' | 'Shieldman' | 'Axeman' | 'Cavalry' | 'Archer' | 'Spearman' | null;

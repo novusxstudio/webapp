@@ -1,0 +1,86 @@
+{
+  "Axeman": {
+    "counters": [
+      "Shieldman",
+      "Cavalry",
+      "Spearman"
+    ],
+    "equals": [
+      "Axeman"
+    ],
+    "counteredBy": [
+      "Swordsman",
+      "Archer"
+    ]
+  },
+  "Swordsman": {
+    "counters": [
+      "Axeman",
+      "Cavalry",
+      "Spearman"
+    ],
+    "equals": [
+      "Swordsman",
+      "Shieldman"
+    ],
+    "counteredBy": [
+      "Archer"
+    ]
+  },
+  "Archer": {
+    "counters": [
+      "Axeman",
+      "Swordsman",
+      "Cavalry"
+    ],
+    "equals": [
+      "Archer"
+    ],
+    "counteredBy": [
+      "Shieldman",
+      "Spearman"
+    ]
+  },
+  "Shieldman": {
+    "counters": [
+      "Archer"
+    ],
+    "equals": [
+      "Swordsman",
+      "Shieldman"
+    ],
+    "counteredBy": [
+      "Axeman",
+      "Cavalry",
+      "Spearman"
+    ]
+  },
+  "Cavalry": {
+    "counters": [
+      "Shieldman"
+    ],
+    "equals": [
+      "Cavalry"
+    ],
+    "counteredBy": [
+      "Axeman",
+      "Swordsman",
+      "Archer",
+      "Spearman"
+    ]
+  },
+  "Spearman": {
+    "counters": [
+      "Archer",
+      "Shieldman",
+      "Cavalry"
+    ],
+    "equals": [
+      "Spearman"
+    ],
+    "counteredBy": [
+      "Axeman",
+      "Swordsman"
+    ]
+  }
+}

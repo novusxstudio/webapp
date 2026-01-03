@@ -246,9 +246,9 @@ function runTests() {
     assert.equal(canDeployUnit(state, 'swordsman', { row: 1, col: 1 }), false);
   });
   
-  test('Each unit type can be deployed max 2 times', () => {
+  test('Each unit type can be deployed max 3 times', () => {
     let state = createTestState();
-    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 0, axeman: 0, cavalry: 0, archer: 0, spearman: 0 };
+    state.players[0].deploymentCounts = { swordsman: 3, shieldman: 0, axeman: 0, cavalry: 0, archer: 0, spearman: 0 };
     assert.equal(canDeployUnit(state, 'swordsman', { row: 1, col: 1 }), false);
     assert.equal(canDeployUnit(state, 'archer', { row: 1, col: 1 }), true);
   });
@@ -926,7 +926,7 @@ function runTests() {
   test('Elimination: Player with no units and no deployments loses', () => {
     let state = createTestState();
     // Player 0 has maxed out all unit types (no deployments left)
-    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
+    state.players[0].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 3 };
     // Player 1 has a unit
     state = placeUnit(state, { row: 3, col: 3 }, 1, 'swordsman');
     // Player 0 has no units and no deployments - eliminated
@@ -936,7 +936,7 @@ function runTests() {
   test('Elimination: Winner is opponent of eliminated player', () => {
     let state = createTestState();
     // Player 1 has maxed out all unit types (no deployments left)
-    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
+    state.players[1].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 3 };
     // Player 0 has a unit
     state = placeUnit(state, { row: 2, col: 2 }, 0, 'swordsman');
     // Player 1 has no units and no deployments - eliminated, Player 0 wins
@@ -945,8 +945,8 @@ function runTests() {
   
   test('Victory for Player 0 when Player 1 has no units on board and no deployments left', () => {
     let state = createTestState();
-    // Player 1 has no deployments left (all unit types maxed at 2 each)
-    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
+    // Player 1 has no deployments left (all unit types maxed at 3 each)
+    state.players[1].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 3 };
     // Player 1 has no units on board
     assert.equal(countUnitsOnBoard(state, 1), 0);
     // Player 1 has no deployments left
@@ -959,8 +959,8 @@ function runTests() {
   
   test('Victory for Player 1 when Player 0 has no units on board and no deployments left', () => {
     let state = createTestState();
-    // Player 0 has no deployments left (all unit types maxed at 2 each)
-    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
+    // Player 0 has no deployments left (all unit types maxed at 3 each)
+    state.players[0].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 3 };
     // Player 0 has no units on board
     assert.equal(countUnitsOnBoard(state, 0), 0);
     // Player 0 has no deployments left
@@ -1008,8 +1008,8 @@ function runTests() {
   test('Draw: Both players have 0 deployments and < 3 units on board', () => {
     let state = createTestState();
     // Max out all deployments for both players
-    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
-    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
+    state.players[0].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 3 };
+    state.players[1].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 3 };
     // Each has 2 units on board (total 2 each)
     state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman');
     state = placeUnit(state, { row: 1, col: 2 }, 0, 'archer');
@@ -1020,9 +1020,9 @@ function runTests() {
 
   test('Draw: Both players have < 3 deployments and 0 units on board', () => {
     let state = createTestState();
-    // Each player has only 2 deployments left (e.g. only spearman not maxed)
-    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 1 };
-    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 1 };
+    // Each player has only 1 deployment left (only spearman has 1 left out of 3)
+    state.players[0].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 2 };
+    state.players[1].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 2 };
     // Each has 0 units on board, 1 deployment remaining each
     assert.equal(countRemainingDeployments(state, 0), 1);
     assert.equal(countRemainingDeployments(state, 1), 1);
@@ -1032,8 +1032,8 @@ function runTests() {
   test('Draw: Both players have < 3 total resources', () => {
     let state = createTestState();
     // Each player has 1 deployment left
-    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 1 };
-    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 1 };
+    state.players[0].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 2 };
+    state.players[1].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 2 };
     // Each has 1 unit on board
     state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman');
     state = placeUnit(state, { row: 5, col: 2 }, 1, 'archer');
@@ -1044,15 +1044,35 @@ function runTests() {
   test('No draw if one player has >= 3 total resources', () => {
     let state = createTestState();
     // Player 0 has 1 deployment left
-    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 1 };
+    state.players[0].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 2 };
     // Player 1 has 0 deployments left
-    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
+    state.players[1].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 3 };
     state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman');
     state = placeUnit(state, { row: 1, col: 2 }, 0, 'archer');
     state = placeUnit(state, { row: 5, col: 1 }, 1, 'swordsman');
     state = placeUnit(state, { row: 5, col: 2 }, 1, 'archer');
     // Player 0 has 3 total (2 units + 1 deployment)
     assert.equal(countRemainingDeployments(state, 0), 1);
+    assert.equal(checkDraw(state), null);
+  });
+
+  test('No draw when both players have 2 deployments remaining and units on board', () => {
+    let state = createTestState();
+    // Each player has 2 deployments remaining (spearman not maxed)
+    state.players[0].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 1 };
+    state.players[1].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 1 };
+    // Each has 2 units on board
+    state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman');
+    state = placeUnit(state, { row: 1, col: 2 }, 0, 'archer');
+    state = placeUnit(state, { row: 5, col: 1 }, 1, 'cavalry');
+    state = placeUnit(state, { row: 5, col: 2 }, 1, 'shieldman');
+    // Verify: 2 deployments remaining each
+    assert.equal(countRemainingDeployments(state, 0), 2);
+    assert.equal(countRemainingDeployments(state, 1), 2);
+    // Verify: 2 units on board each
+    assert.equal(countUnitsOnBoard(state, 0), 2);
+    assert.equal(countUnitsOnBoard(state, 1), 2);
+    // Total: 2 + 2 = 4 each (>= 3), so NO draw
     assert.equal(checkDraw(state), null);
   });
   
@@ -1063,8 +1083,8 @@ function runTests() {
     // Player 1 has Shieldman on control point
     // Neither player has Axeman or Spearman
     // Max out all deployments for both players
-    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
-    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
+    state.players[0].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 3 };
+    state.players[1].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 3 };
     state = placeUnit(state, { row: 3, col: 1 }, 0, 'shieldman');
     state = placeUnit(state, { row: 3, col: 5 }, 1, 'shieldman');
     // Add more units to avoid low_resources draw
@@ -1079,9 +1099,9 @@ function runTests() {
   test('No mutual invincibility draw if either player has deployments left', () => {
     let state = createTestState();
     // Player 0 has 1 deployment left - no mutual invincibility check
-    state.players[0].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 1 };
+    state.players[0].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 2 };
     // Player 1 has 0 deployments left
-    state.players[1].deploymentCounts = { swordsman: 2, shieldman: 2, axeman: 2, cavalry: 2, archer: 2, spearman: 2 };
+    state.players[1].deploymentCounts = { swordsman: 3, shieldman: 3, axeman: 3, cavalry: 3, archer: 3, spearman: 3 };
     state = placeUnit(state, { row: 3, col: 1 }, 0, 'shieldman');
     state = placeUnit(state, { row: 3, col: 5 }, 1, 'shieldman');
     state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman');
@@ -1096,13 +1116,67 @@ function runTests() {
   // ==========================================================================
   console.log('\n=== Count Units Tests ===');
   
-  test('countUnitsOnBoard returns correct count', () => {
+  test('countUnitsOnBoard returns 0 for empty board', () => {
+    let state = createTestState();
+    assert.equal(countUnitsOnBoard(state, 0), 0);
+    assert.equal(countUnitsOnBoard(state, 1), 0);
+  });
+
+  test('countUnitsOnBoard returns correct count for single unit', () => {
+    let state = createTestState();
+    state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman');
+    assert.equal(countUnitsOnBoard(state, 0), 1);
+    assert.equal(countUnitsOnBoard(state, 1), 0);
+  });
+
+  test('countUnitsOnBoard returns correct count for multiple units same player', () => {
+    let state = createTestState();
+    state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman');
+    state = placeUnit(state, { row: 1, col: 2 }, 0, 'archer');
+    state = placeUnit(state, { row: 1, col: 3 }, 0, 'cavalry');
+    assert.equal(countUnitsOnBoard(state, 0), 3);
+    assert.equal(countUnitsOnBoard(state, 1), 0);
+  });
+
+  test('countUnitsOnBoard distinguishes between players', () => {
     let state = createTestState();
     state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman');
     state = placeUnit(state, { row: 1, col: 2 }, 0, 'archer');
     state = placeUnit(state, { row: 5, col: 1 }, 1, 'cavalry');
     assert.equal(countUnitsOnBoard(state, 0), 2);
     assert.equal(countUnitsOnBoard(state, 1), 1);
+  });
+
+  test('countUnitsOnBoard counts units anywhere on the grid', () => {
+    let state = createTestState();
+    // Place units in different areas of the board
+    state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman'); // top-left
+    state = placeUnit(state, { row: 1, col: 5 }, 0, 'archer');    // top-right
+    state = placeUnit(state, { row: 3, col: 3 }, 0, 'cavalry');   // center
+    state = placeUnit(state, { row: 5, col: 1 }, 0, 'spearman');  // bottom-left
+    state = placeUnit(state, { row: 5, col: 5 }, 0, 'axeman');    // bottom-right
+    assert.equal(countUnitsOnBoard(state, 0), 5);
+  });
+
+  test('countUnitsOnBoard with max units on board', () => {
+    let state = createTestState();
+    // Place 6 units for each player (max deployable)
+    state = placeUnit(state, { row: 1, col: 1 }, 0, 'swordsman');
+    state = placeUnit(state, { row: 1, col: 2 }, 0, 'archer');
+    state = placeUnit(state, { row: 1, col: 3 }, 0, 'cavalry');
+    state = placeUnit(state, { row: 1, col: 4 }, 0, 'spearman');
+    state = placeUnit(state, { row: 1, col: 5 }, 0, 'axeman');
+    state = placeUnit(state, { row: 2, col: 1 }, 0, 'shieldman');
+    
+    state = placeUnit(state, { row: 5, col: 1 }, 1, 'swordsman');
+    state = placeUnit(state, { row: 5, col: 2 }, 1, 'archer');
+    state = placeUnit(state, { row: 5, col: 3 }, 1, 'cavalry');
+    state = placeUnit(state, { row: 5, col: 4 }, 1, 'spearman');
+    state = placeUnit(state, { row: 5, col: 5 }, 1, 'axeman');
+    state = placeUnit(state, { row: 4, col: 1 }, 1, 'shieldman');
+    
+    assert.equal(countUnitsOnBoard(state, 0), 6);
+    assert.equal(countUnitsOnBoard(state, 1), 6);
   });
   
   // ==========================================================================
