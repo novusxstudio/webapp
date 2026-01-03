@@ -9,7 +9,7 @@ export type TileId = Position;
 export type Action =
   | { type: 'MOVE'; unitId: string; to: TileId }
   | { type: 'ATTACK'; unitId: string; targetId: string }
-  | { type: 'DEPLOY'; unitType: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer'; to: TileId }
+  | { type: 'DEPLOY'; unitType: 'Swordsman' | 'Shieldman' | 'Axeman' | 'Cavalry' | 'Archer' | 'Spearman'; to: TileId }
   | { type: 'ROTATE'; unitId: string; target: TileId }
   | { type: 'END_TURN' };
 
@@ -110,7 +110,7 @@ export function getAvailableActions(state: GameState, playerId: PlayerID): Actio
   }
 
   // Generate deployments (valid tiles in the player's deploy row)
-  const unitTypes: Array<'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer'> = ['Swordsman', 'Shieldman', 'Spearman', 'Cavalry', 'Archer'];
+  const unitTypes: Array<'Swordsman' | 'Shieldman' | 'Axeman' | 'Cavalry' | 'Archer' | 'Spearman'> = ['Swordsman', 'Shieldman', 'Axeman', 'Cavalry', 'Archer', 'Spearman'];
   for (const uType of unitTypes) {
     for (let c = 1; c <= 5; c++) {
       const row = playerId === 0 ? 1 : 5;

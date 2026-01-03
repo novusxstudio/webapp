@@ -10,7 +10,7 @@ export type PlayerAction =
   | { kind: 'MOVE'; unitId: string; target: Position }
   | { kind: 'ATTACK'; attackerId: string; targetPos: Position }
   | { kind: 'ROTATE'; unitId: string; targetPos: Position }
-  | { kind: 'DEPLOY'; unitType: 'Swordsman' | 'Shieldman' | 'Spearman' | 'Cavalry' | 'Archer'; targetPos: Position }
+  | { kind: 'DEPLOY'; unitType: 'Swordsman' | 'Shieldman' | 'Axeman' | 'Cavalry' | 'Archer' | 'Spearman'; targetPos: Position }
   | { kind: 'END_TURN' };
 
 export interface CreateGameResponse {

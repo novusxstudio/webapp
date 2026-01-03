@@ -1,8 +1,8 @@
 import type { UnitStats } from './GameState';
 
 export const UNIT_DATA: Record<string, UnitStats> = {
-  spearman: {
-    type: 'Spearman',
+  axeman: {
+    type: 'Axeman',
     moveRange: 1,
     attackRange: 1,
   },
@@ -25,5 +25,10 @@ export const UNIT_DATA: Record<string, UnitStats> = {
     type: 'Cavalry',
     moveRange: 2,
     attackRange: 1,
+  },
+  spearman: {
+    type: 'Spearman',
+    moveRange: 1,
+    attackRange: 2,
   },
 };

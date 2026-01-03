@@ -16,7 +16,7 @@ export const Unit: React.FC<UnitProps> = ({ unitId, ownerId, unitSize }) => {
 
   /** Extract the unit type from its id string. */
   const getUnitType = (id: string): string => {
-    // Remove player prefix and timestamp if present (e.g., "p0-spearman-123" -> "spearman")
+    // Remove player prefix and timestamp if present (e.g., "p0-axeman-123" -> "axeman")
     const parts = id.split('-');
     return parts[1] || parts[0];
   };
@@ -33,11 +33,12 @@ export const Unit: React.FC<UnitProps> = ({ unitId, ownerId, unitSize }) => {
     const unitType = getUnitType(id);
     
     const abbreviations: Record<string, string> = {
-      spearman: 'SP',
+      axeman: 'AX',
       swordsman: 'SW',
       archer: 'AR',
       shieldman: 'SH',
       cavalry: 'CV',
+      spearman: 'SP',
     };
     
     return abbreviations[unitType] || unitType.substring(0, 2).toUpperCase();

@@ -17,6 +17,7 @@ interface HUDProps {
   musicEnabled: boolean;
   onToggleMusic: () => void;
   onOpenRules: () => void;
+  onSurrender: () => void;
 }
 
 /**
@@ -24,7 +25,7 @@ interface HUDProps {
  * - Shows turn, player, actions, deployments, timers, and mode.
  * - Exposes controls for Rules, Music toggle, Leave Game, and End Turn.
  */
-export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRemaining, actionMode, freeDeploymentsRemaining, winner, gameId, inactivityRemaining, disconnectGraceRemaining, onEndTurn, onLeaveGame, isTurnBlocked, musicEnabled, onToggleMusic, onOpenRules }) => {
+export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRemaining, actionMode, freeDeploymentsRemaining, winner, gameId, inactivityRemaining, disconnectGraceRemaining, onEndTurn, onLeaveGame, isTurnBlocked, musicEnabled, onToggleMusic, onOpenRules, onSurrender }) => {
   
   const hudStyle: React.CSSProperties = {
     width: '100%',
@@ -150,6 +151,13 @@ export const HUD: React.FC<HUDProps> = ({ currentPlayer, turnNumber, actionsRema
           onClick={onToggleMusic}
         >
           {`Music: ${musicEnabled ? 'ON' : 'OFF'}`}
+        </button>
+        <button
+          style={buttonStyle(winner !== null)}
+          onClick={onSurrender}
+          disabled={winner !== null}
+        >
+          Surrender
         </button>
         <button
           style={buttonStyle(false)}

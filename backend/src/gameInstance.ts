@@ -3,7 +3,7 @@ import type { Server as IOServer, Socket } from 'socket.io';
 import type { PlayerId, PlayerAction, GameInstanceDescriptor } from './types';
 import type { GameState, Position } from './logic/GameState';
 import { createInitialGrid } from './logic/setup';
-import { applyMove, applyAttack, applyRotate, applyDeployUnit, endTurn, controlsAllPoints } from './logic/rules';
+import { applyMove, applyAttack, applyRotate, applyDeployUnit, endTurn, controlsAllPoints, checkDraw, checkElimination, type DrawReason } from './logic/rules';
 import { getAvailableActions as getAvailableStrictActions, applyAction as applyStrictAction, includesAction as includesStrictAction, type Action as StrictAction } from './engine/actions';
 import { BOT_REGISTRY } from './bots';
 
@@ -31,9 +31,17 @@ export class GameInstance implements GameInstanceDescriptor {
 
   static createInitialGameState(): GameState {
     const grid = createInitialGrid();
+    const initialDeploymentCounts = {
+      swordsman: 0,
+      shieldman: 0,
+      axeman: 0,
+      cavalry: 0,
+      archer: 0,
+      spearman: 0,
+    };
     const players = [
-      { id: 0, actionsRemaining: 1 },
-      { id: 1, actionsRemaining: 0 },
+      { id: 0, actionsRemaining: 1, deploymentsRemaining: 10, deploymentCounts: { ...initialDeploymentCounts } },
+      { id: 1, actionsRemaining: 0, deploymentsRemaining: 10, deploymentCounts: { ...initialDeploymentCounts } },
     ];
     return {
       grid,
@@ -51,6 +59,27 @@ export class GameInstance implements GameInstanceDescriptor {
 
   hasPlayer(playerId: PlayerId): boolean {
     return this.players.has(playerId);
+  }
+
+  /**
+   * Check if a player slot is filled (either by a human socket or a bot)
+   */
+  isPlayerPresent(playerId: PlayerId): boolean {
+    return this.players.has(playerId) || !!this.state.players[playerId]?.isBot;
+  }
+
+  /**
+   * Check if both players are present (human or bot)
+   */
+  areBothPlayersPresent(): boolean {
+    return this.isPlayerPresent(0) && this.isPlayerPresent(1);
+  }
+
+  /**
+   * Check if this is a bot game (either player is a bot)
+   */
+  isBotGame(): boolean {
+    return !!this.state.players[0]?.isBot || !!this.state.players[1]?.isBot;
   }
 
   getPlayerSocketId(playerId: PlayerId): string | undefined {
@@ -159,6 +188,7 @@ export class GameInstance implements GameInstanceDescriptor {
         // Determine free vs action spend
         const freeAvailable = newState.freeDeploymentsRemaining > 0 && !newState.hasActedThisTurn;
         if (freeAvailable) {
+          // Free deployment: do not decrement deploymentsRemaining again (already done in applyDeployUnit)
           newState = {
             ...newState,
             freeDeploymentsRemaining: newState.freeDeploymentsRemaining - 1,
@@ -271,18 +301,38 @@ export class GameInstance implements GameInstanceDescriptor {
     io.to(this.roomName()).emit('STATE_UPDATE', { gameId: this.id, state: this.state });
   }
 
-  // Determine if either player controls all control points
+  // Determine if either player controls all control points or opponent is eliminated
   checkVictory(): PlayerId | null {
+    // Control point victory
     if (controlsAllPoints(this.state, 0)) return 0;
     if (controlsAllPoints(this.state, 1)) return 1;
+    
+    // Elimination victory - if one player has no units and no deployments left
+    const eliminated = checkElimination(this.state);
+    if (eliminated === 0) return 1; // Player 0 eliminated, Player 1 wins
+    if (eliminated === 1) return 0; // Player 1 eliminated, Player 0 wins
+    
     return null;
   }
 
-  startInactivityTimer(io: IOServer, seconds = 30, onTimeout?: () => void, onWin?: (winner: PlayerId) => void) {
+  // Check if game should end in a draw
+  checkDrawCondition(): DrawReason {
+    return checkDraw(this.state);
+  }
+
+  startInactivityTimer(io: IOServer, seconds = 30, onTimeout?: () => void, onWin?: (winner: PlayerId) => void, onDraw?: (reason: DrawReason) => void) {
     if (this.inactivityTimer) {
       clearTimeout(this.inactivityTimer);
       this.inactivityTimer = null;
     }
+    
+    // Don't start inactivity timer if current player is a bot - bots act instantly
+    if (this.isCurrentPlayerBot()) {
+      // Cancel any displayed timer on the client since it's the bot's turn
+      io.to(this.roomName()).emit('INACTIVITY_TIMER_CANCEL', { gameId: this.id });
+      return;
+    }
+    
     const current = this.state.currentPlayer as PlayerId;
     const deadline = Date.now() + seconds * 1000;
     io.to(this.roomName()).emit('INACTIVITY_TIMER_START', {
@@ -305,10 +355,42 @@ export class GameInstance implements GameInstanceDescriptor {
           io.to(this.roomName()).emit('GAME_CONCLUDED', { gameId: this.id, winner });
           if (onWin) onWin(winner);
         }, 0);
-      } else {
-        // Automatically start the inactivity timer for the next player's turn
-        this.startInactivityTimer(io, seconds, undefined, onWin);
+        return;
       }
+      
+      // Check draw after endTurn
+      const drawReason = this.checkDrawCondition();
+      if (drawReason !== null) {
+        setTimeout(() => {
+          io.to(this.roomName()).emit('GAME_DRAW', { gameId: this.id, reason: drawReason });
+          if (onDraw) onDraw(drawReason);
+        }, 0);
+        return;
+      }
+      
+      // If it's now a bot's turn, execute bot actions
+      if (this.isCurrentPlayerBot()) {
+        this.executeBotTurn();
+        this.broadcastState(io);
+        const winner2 = this.checkVictory();
+        if (winner2 !== null) {
+          setTimeout(() => {
+            io.to(this.roomName()).emit('GAME_CONCLUDED', { gameId: this.id, winner: winner2 });
+            if (onWin) onWin(winner2);
+          }, 0);
+          return;
+        }
+        const drawReason2 = this.checkDrawCondition();
+        if (drawReason2 !== null) {
+          setTimeout(() => {
+            io.to(this.roomName()).emit('GAME_DRAW', { gameId: this.id, reason: drawReason2 });
+            if (onDraw) onDraw(drawReason2);
+          }, 0);
+          return;
+        }
+      }
+      // Start the inactivity timer for the next human player's turn
+      this.startInactivityTimer(io, seconds, undefined, onWin, onDraw);
     }, seconds * 1000);
   }
 

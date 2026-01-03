@@ -103,21 +103,24 @@ export const RulesModal: React.FC<RulesModalProps> = ({ onClose }) => {
             <li>No HP, damage numbers, or randomness.</li>
           </ul>
 
-          <h2 style={sectionTitleStyle}>Archer Rules</h2>
+          <h2 style={sectionTitleStyle}>Ranged Unit Rules</h2>
           <ul style={listStyle}>
+            <li>Archer and Spearman have attack range 2.</li>
             <li>Cannot attack if line-of-sight is blocked by any unit.</li>
             <li>Cannot fire over units.</li>
-            <li>Always lose in close-range (adjacent) combat.</li>
-            <li>Instantly kill enemies at range when line-of-sight is clear.</li>
+            <li>Shieldman is immune to ranged attacks.</li>
+            <li>Archer ranged: beats Archer, Cavalry, Axeman, Swordsman, Spearman.</li>
+            <li>Spearman ranged: beats Archer, Cavalry, Spearman.</li>
           </ul>
 
-          <h2 style={sectionTitleStyle}>Unit Matchups</h2>
+          <h2 style={sectionTitleStyle}>Unit Matchups (Melee)</h2>
           <ul style={listStyle}>
-            <li>Swordsman beats: Swordsman, Spearman, Cavalry, Archer.</li>
-            <li>Shieldman beats: Archer, Cavalry, Spearman.</li>
-            <li>Spearman beats: Swordsman, Spearman, Shieldman, Cavalry, Archer.</li>
-            <li>Cavalry beats: Cavalry, Spearman, Archer.</li>
-            <li>Archer vs Archer: both are removed.</li>
+            <li>Swordsman beats: Swordsman, Axeman, Cavalry, Archer, Spearman.</li>
+            <li>Shieldman beats: Archer.</li>
+            <li>Axeman beats: Axeman, Shieldman, Cavalry, Archer, Spearman.</li>
+            <li>Cavalry beats: Cavalry, Archer, Spearman.</li>
+            <li>Archer beats: Archer (melee only).</li>
+            <li>Spearman beats: Spearman, Shieldman, Cavalry, Archer.</li>
           </ul>
 
           <h2 style={sectionTitleStyle}>Board</h2>

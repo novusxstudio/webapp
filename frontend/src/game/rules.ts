@@ -44,9 +44,10 @@ function middleControlBonus(state: GameState, playerId: number): number {
 const LABEL_TO_KEY: Record<string, keyof typeof UNIT_DATA> = {
   Swordsman: 'swordsman',
   Shieldman: 'shieldman',
-  Spearman: 'spearman',
+  Axeman: 'axeman',
   Cavalry: 'cavalry',
   Archer: 'archer',
+  Spearman: 'spearman',
 };
 
 function normalizeUnitKey(key: string): keyof typeof UNIT_DATA {
@@ -57,6 +58,9 @@ function normalizeUnitKey(key: string): keyof typeof UNIT_DATA {
   if ((UNIT_DATA as any)[lower]) return lower as keyof typeof UNIT_DATA;
   throw new Error('Unknown unit key');
 }
+
+// Maximum deployments per unit type per player
+const MAX_DEPLOYMENTS_PER_TYPE = 3;
 
 export function canDeployUnit(state: GameState, unitKey: string, targetPos: Position): boolean {
   // Target tile must be empty
@@ -77,10 +81,15 @@ export function canDeployUnit(state: GameState, unitKey: string, targetPos: Posi
   const unitStats = UNIT_DATA[normalized];
   if (!unitStats) return false;
 
-  // Must have either a free deployment available (before action) or an action to spend
+  const player = state.players[state.currentPlayer];
   const freeAvailable = state.freeDeploymentsRemaining > 0 && !state.hasActedThisTurn;
-  const actionsAvailable = state.players[state.currentPlayer].actionsRemaining > 0;
+  const actionsAvailable = player.actionsRemaining > 0;
+  // Need either a free deployment or an action available
   if (!freeAvailable && !actionsAvailable) return false;
+  // Check per-type deployment limit (max 2 of each type)
+  const deploymentCounts = player.deploymentCounts ?? {};
+  const currentTypeCount = deploymentCounts[normalized] ?? 0;
+  if (currentTypeCount >= MAX_DEPLOYMENTS_PER_TYPE) return false;
 
   return true;
 }
@@ -98,6 +107,7 @@ export function applyDeployUnit(state: GameState, unitKey: string, targetPos: Po
     ownerId: state.currentPlayer,
     stats: { ...unitStats },
     position: { row: targetPos.row, col: targetPos.col },
+    actedThisTurn: true,
   };
 
   // Place unit
@@ -113,7 +123,17 @@ export function applyDeployUnit(state: GameState, unitKey: string, targetPos: Po
     return row;
   });
 
-  return { ...state, grid: newGrid };
+  // Update per-type count
+  const playerIndex = state.currentPlayer;
+  const freeAvailable = state.freeDeploymentsRemaining > 0 && !state.hasActedThisTurn;
+  const players = state.players.map((p, i) => {
+    if (i !== playerIndex) return p;
+    const currentCounts = p.deploymentCounts ?? {};
+    const newCounts = { ...currentCounts, [normalized]: (currentCounts[normalized] ?? 0) + 1 };
+    return { ...p, deploymentCounts: newCounts };
+  });
+
+  return { ...state, grid: newGrid, players };
 }
 
 export function checkWin(state: GameState, playerId: number): boolean {
@@ -144,6 +164,9 @@ export function canMove(state: GameState, unitId: string, target: Position): boo
   if (!foundUnit || !sourcePos) {
     return false;
   }
+  // Must be current player's unit and not have acted already this turn
+  if (foundUnit.ownerId !== state.currentPlayer) return false;
+  if (foundUnit.actedThisTurn) return false;
   
   // Target tile must be empty
   const targetTile = state.grid[target.row - 1][target.col - 1];
@@ -210,6 +233,9 @@ export function canRotate(state: GameState, unitId: string, targetPos: Position)
   if (!sourceUnit || !sourcePos) {
     return false;
   }
+  // Must be current player's unit and not have acted already this turn
+  if (sourceUnit.ownerId !== state.currentPlayer) return false;
+  if (sourceUnit.actedThisTurn) return false;
   
   // Target tile must contain a unit
   const targetTile = state.grid[targetPos.row - 1][targetPos.col - 1];
@@ -297,7 +323,8 @@ export function applyMove(state: GameState, unitId: string, target: Position): G
             unit: {
               ...foundUnit!,
               position: { row: target.row, col: target.col },
-              stats: { ...foundUnit!.stats }
+              stats: { ...foundUnit!.stats },
+              actedThisTurn: true,
             }
           };
         }
@@ -348,6 +375,8 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
   let newGrid: GameState['grid'];
   if (isAdj || isDiagonal) {
     // Simple swap for adjacency or diagonal cavalry swap
+    // Only the initiating unit (sourceUnit) uses up its action
+    // The target unit does NOT have its action consumed
     newGrid = state.grid.map((row, rowIndex) => {
       if (rowIndex === sourcePos!.row - 1 || rowIndex === targetPos.row - 1) {
         return row.map((tile, colIndex) => {
@@ -360,7 +389,7 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
           if (rowIndex === targetPos.row - 1 && colIndex === targetPos.col - 1) {
             return {
               ...tile,
-              unit: { ...sourceUnit!, position: { row: targetPos.row, col: targetPos.col } }
+              unit: { ...sourceUnit!, position: { row: targetPos.row, col: targetPos.col }, actedThisTurn: true }
             };
           }
           return tile;
@@ -370,6 +399,8 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
     });
   } else if ((dx === 2 && dy === 0) || (dx === 0 && dy === 2)) {
     // Cavalry long rotation: cavalry -> target; target -> middle; source becomes empty
+    // Only the initiating cavalry uses up its action
+    // The target unit does NOT have its action consumed
     const midPos: Position = {
       row: dy === 0 ? sourcePos!.row : (sourcePos!.row + targetPos.row) / 2,
       col: dx === 0 ? sourcePos!.col : (sourcePos!.col + targetPos.col) / 2,
@@ -381,12 +412,12 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
         return { ...tile, unit: null };
       }
       if (here.row === midPos.row && here.col === midPos.col) {
-        // Middle gets the target unit
+        // Middle gets the target unit, NOT marked as acted
         return { ...tile, unit: { ...targetUnit, position: { row: midPos.row, col: midPos.col } } };
       }
       if (here.row === targetPos.row && here.col === targetPos.col) {
-        // Target gets the cavalry
-        return { ...tile, unit: { ...sourceUnit!, position: { row: targetPos.row, col: targetPos.col } } };
+        // Target gets the cavalry, mark as acted
+        return { ...tile, unit: { ...sourceUnit!, position: { row: targetPos.row, col: targetPos.col }, actedThisTurn: true } };
       }
       return tile;
     }));
@@ -432,25 +463,53 @@ function hasLineOfSight(state: GameState, from: Position, to: Position): boolean
   return false;
 }
 
-export function getMatchupsForType(type: Unit['stats']['type']): { beats: Unit['stats']['type'][]; diesTo: Unit['stats']['type'][] } {
-  const beats = BEATS[type] ?? [];
+export function getMatchupsForType(type: Unit['stats']['type']): { 
+  beatsMelee: Unit['stats']['type'][]; 
+  beatsRanged: Unit['stats']['type'][];
+  // Legacy properties for backwards compatibility
+  beats: Unit['stats']['type'][]; 
+  diesTo: Unit['stats']['type'][] 
+} {
+  const beatsMelee = MELEE_BEATS[type] ?? [];
+  const beatsRanged = RANGED_BEATS[type] ?? [];
   const diesTo: Unit['stats']['type'][] = [];
-  (Object.keys(BEATS) as Array<Unit['stats']['type']>).forEach(t => {
-    if (BEATS[t].includes(type)) diesTo.push(t);
+  (Object.keys(MELEE_BEATS) as Array<Unit['stats']['type']>).forEach(t => {
+    if (MELEE_BEATS[t].includes(type)) diesTo.push(t);
   });
-  return { beats, diesTo };
+  return { beatsMelee, beatsRanged, beats: beatsMelee, diesTo };
 }
 
-const BEATS: Record<Unit['stats']['type'], Unit['stats']['type'][]> = {
-  Swordsman: ['Swordsman', 'Spearman', 'Cavalry', 'Archer'],
-  Shieldman: ['Archer', 'Cavalry'],
-  Spearman: ['Swordsman', 'Spearman', 'Shieldman', 'Cavalry', 'Archer'],
-  Cavalry: ['Cavalry', 'Spearman', 'Archer'],
-  Archer: ['Cavalry', 'Spearman', 'Archer'],
+// Melee combat matchups (Attack Range 1, orthogonal adjacency)
+// Rules: Unit X can attack Unit Y if Y is in X's "Defeats" list
+const MELEE_BEATS: Record<Unit['stats']['type'], Unit['stats']['type'][]> = {
+  // Swordsman defeats: Archer, Cavalry, Axeman, Swordsman, Spearman
+  Swordsman: ['Archer', 'Cavalry', 'Axeman', 'Swordsman', 'Spearman'],
+  // Shieldbearer(Shieldman) defeats: Archer
+  Shieldman: ['Archer'],
+  // Axeman defeats: Archer, Shieldbearer, Cavalry, Axeman, Spearman
+  Axeman: ['Archer', 'Shieldman', 'Cavalry', 'Axeman', 'Spearman'],
+  // Cavalry defeats: Archer, Cavalry, Spearman
+  Cavalry: ['Archer', 'Cavalry', 'Spearman'],
+  // Archer defeats: Archer (melee only)
+  Archer: ['Archer'],
+  // Spearman defeats: Archer, Shieldbearer, Cavalry, Spearman (melee)
+  Spearman: ['Archer', 'Shieldman', 'Cavalry', 'Spearman'],
 };
 
+// Ranged combat matchups (Attack Range 2, for Archer and Spearman)
+// Archer's Defeats(ranged): Archer, Cavalry, Axeman, Swordsman, Spearman
+// Spearman's Defeats(ranged): Archer, Cavalry, Spearman
+// Note: Shieldman is immune to ranged attacks
+const RANGED_BEATS: Partial<Record<Unit['stats']['type'], Unit['stats']['type'][]>> = {
+  Archer: ['Archer', 'Cavalry', 'Axeman', 'Swordsman', 'Spearman'],
+  Spearman: ['Archer', 'Cavalry', 'Spearman'],
+};
+
+// Close-range is strictly orthogonal adjacency (dx+dy === 1)
 function isCloseRange(a: Position, b: Position): boolean {
-  return getDistance(a, b) === 1;
+  const dx = Math.abs(a.col - b.col);
+  const dy = Math.abs(a.row - b.row);
+  return dx + dy === 1;
 }
 
 export function applyAttack(state: GameState, attackerId: string, targetPos: Position): GameState {
@@ -458,8 +517,8 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
     throw new Error('No actions remaining');
   }
   // Find the attacker unit by attackerId
-  let attacker = null;
-  let attackerPos = null;
+  let attacker: Unit | null = null;
+  let attackerPos: Position | null = null;
   
   for (let row = 0; row < 5; row++) {
     for (let col = 0; col < 5; col++) {
@@ -475,6 +534,13 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
   
   if (!attacker || !attackerPos) {
     throw new Error(`Attacker with id ${attackerId} not found`);
+  }
+  // Must be current player's unit and not have acted already this turn
+  if (attacker.ownerId !== state.currentPlayer) {
+    throw new Error('Cannot attack with opponent unit');
+  }
+  if (attacker.actedThisTurn) {
+    throw new Error('Unit already acted this turn');
   }
   
   // Validate target tile contains a unit
@@ -496,62 +562,66 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
     throw new Error(`Attack distance ${distance} exceeds unit's attackRange ${attacker.stats.attackRange}`);
   }
 
-  // One-shot combat resolution
   const aType = attacker.stats.type;
   const dType = defender.stats.type;
-
-  // Archer vs Archer: both removed
+  const isMelee = isCloseRange(attackerPos, targetPos);
+  const isRanged = !isMelee;
+  
   let removeAttacker = false;
   let removeDefender = false;
-
-  if (aType === 'Archer' && dType === 'Archer') {
-    removeAttacker = true;
-    removeDefender = true;
-  } else if (aType === 'Archer') {
-    // Archer constraints
-    if (isCloseRange(attackerPos, targetPos)) {
-      // Archers always lose in close-range
+  
+  // Ranged combat (Archer or Spearman, distance > 1)
+  if (isRanged && (aType === 'Archer' || aType === 'Spearman')) {
+    if (!hasLineOfSight(state, attackerPos, targetPos)) {
+      throw new Error('Line of sight is blocked for ranged attack');
+    }
+    // Ranged attack - can only target units in attacker's RANGED_BEATS, Shieldman immune
+    if (dType === 'Shieldman') {
+      throw new Error('Shieldman is immune to ranged attacks');
+    }
+    const rangedTargets = RANGED_BEATS[aType] ?? [];
+    if (rangedTargets.includes(dType)) {
+      removeDefender = true;
+    } else {
+      throw new Error('Invalid ranged target');
+    }
+  }
+  // Melee combat
+  else {
+    const attackerBeats = MELEE_BEATS[aType];
+    const defenderBeats = MELEE_BEATS[dType];
+    const attackerWins = attackerBeats.includes(dType);
+    const defenderWins = defenderBeats.includes(aType);
+    
+    // Mutual defeat - both units removed
+    if (attackerWins && defenderWins) {
       removeAttacker = true;
-    } else {
-      // Must have clear line-of-sight to target
-      if (!hasLineOfSight(state, attackerPos, targetPos)) {
-        throw new Error('Line of sight is blocked for Archer');
-      }
-      // Archers can now kill Swordsmen at range; Shieldmen remain immune
-      if (dType === 'Shieldman') {
-        removeAttacker = false;
-        removeDefender = false;
-      } else {
-        removeDefender = true;
-      }
+      removeDefender = true;
     }
-    } else {
-      // Melee units: deterministic matchup
-      const attackerBeats = BEATS[aType];
-      const defenderBeats = BEATS[dType];
-      const attackerWins = attackerBeats.includes(dType);
-      const defenderWins = defenderBeats.includes(aType);
-
-      if (attackerWins && defenderWins) {
-        // Mutual advantage: both removed
-        removeAttacker = true;
-        removeDefender = true;
-      } else if (attackerWins) {
-        removeDefender = true;
-      } else if (defenderWins) {
-        removeAttacker = true;
-      } else {
-        // Neither has advantage: invalid attack (should be blocked by canAttack)
-        throw new Error('Invalid attack: no advantage');
-      }
+    // Attacker wins - defender removed
+    else if (attackerWins) {
+      removeDefender = true;
     }
+    // Defender wins - attacker removed
+    else if (defenderWins) {
+      removeAttacker = true;
+    }
+    // Neither wins - invalid attack (should be blocked by canAttack)
+    else {
+      throw new Error('Invalid attack: no advantage');
+    }
+  }
 
   // Apply removals immediately
   const newGrid = state.grid.map((row, rowIndex) => {
     return row.map((tile, colIndex) => {
       let unit = tile.unit;
-      if (rowIndex === attackerPos.row - 1 && colIndex === attackerPos.col - 1 && removeAttacker) {
-        unit = null;
+      if (rowIndex === attackerPos!.row - 1 && colIndex === attackerPos!.col - 1) {
+        if (removeAttacker) {
+          unit = null;
+        } else if (unit) {
+          unit = { ...unit, actedThisTurn: true };
+        }
       }
       if (rowIndex === targetPos.row - 1 && colIndex === targetPos.col - 1 && removeDefender) {
         unit = null;
@@ -579,6 +649,8 @@ export function canAttack(state: GameState, attackerId: string, targetPos: Posit
     if (attacker) break;
   }
   if (!attacker || !attackerPos) return false;
+  if (attacker.ownerId !== state.currentPlayer) return false;
+  if (attacker.actedThisTurn) return false;
   const tile = state.grid[targetPos.row - 1][targetPos.col - 1];
   if (!tile.unit) return false;
   const defender = tile.unit;
@@ -587,29 +659,26 @@ export function canAttack(state: GameState, attackerId: string, targetPos: Posit
   const distance = getDistance(attackerPos, targetPos);
   if (distance > attacker.stats.attackRange) return false;
 
-  // Archer-specific validation
-  if (attacker.stats.type === 'Archer') {
-    if (isCloseRange(attackerPos, targetPos)) {
-      // Archers can engage at close range but will lose; allow selection
-      return true;
-    }
-    // Prevent ranged targeting of Shieldman entirely; allow Swordsman
-    if (defender.stats.type === 'Shieldman') {
-      return false;
-    }
-    // Require line-of-sight for ranged shots
+  const aType = attacker.stats.type;
+  const dType = defender.stats.type;
+  const isMelee = isCloseRange(attackerPos, targetPos);
+
+  // Ranged attack (Archer or Spearman)
+  if (!isMelee && (aType === 'Archer' || aType === 'Spearman')) {
+    // Shieldman immune to ranged
+    if (dType === 'Shieldman') return false;
+    // Must be in attacker's RANGED_BEATS list and have line of sight
+    const rangedTargets = RANGED_BEATS[aType] ?? [];
+    if (!rangedTargets.includes(dType)) return false;
     return hasLineOfSight(state, attackerPos, targetPos);
   }
 
-  // Non-archers: require that an advantage exists; otherwise attacking is invalid
-  const attackerBeats = BEATS[attacker.stats.type];
-  const defenderBeats = BEATS[defender.stats.type];
-  const attackerWins = attackerBeats.includes(defender.stats.type);
-  const defenderWins = defenderBeats.includes(attacker.stats.type);
+  // Melee attack - attacker must be able to defeat the defender
+  const attackerBeats = MELEE_BEATS[aType];
+  const attackerWins = attackerBeats.includes(dType);
 
-  // If neither has advantage, attack is not a valid option
-  if (!attackerWins && !defenderWins) return false;
-  // Otherwise valid (including mutual advantage or attacker/defender advantage)
+  // Attacker must be able to defeat the defender to initiate attack
+  if (!attackerWins) return false;
   return true;
 }
 
@@ -624,8 +693,16 @@ export function endTurn(state: GameState): GameState {
   const freeDeploys = countOutsideControl(state, newCurrentPlayer);
   const players = state.players.map((p, i) => i === newCurrentPlayer ? { ...p, actionsRemaining: 1 + bonus } : p);
 
+  // Reset per-unit action flags for the new turn
+  const resetGrid = state.grid.map(row => row.map(tile => {
+    const u = tile.unit;
+    if (!u) return tile;
+    return { ...tile, unit: { ...u, actedThisTurn: false } };
+  }));
+
   return {
     ...state,
+    grid: resetGrid,
     currentPlayer: newCurrentPlayer,
     turnNumber: state.turnNumber + 1,
     players,

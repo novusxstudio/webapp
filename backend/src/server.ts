@@ -49,14 +49,34 @@ io.on('connection', (socket) => {
       socket.emit('GAME_CREATED', resp);
       const game = manager.getGame(resp.gameId)!;
       game.broadcastState(io);
-      // Start inactivity timer immediately since bot is present
-      game.startInactivityTimer(io, 30, undefined, () => {
-        manager.endGame(game.id);
-        io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
-      });
-      // If bot starts (current player is bot), execute bot turn
-      game.executeBotTurn();
-      game.broadcastState(io);
+      
+      // If bot starts (current player is bot), execute bot turn first
+      if (game.state.players[game.state.currentPlayer]?.isBot) {
+        game.executeBotTurn();
+        game.broadcastState(io);
+        // Check for victory after bot turn
+        const winner = game.checkVictory();
+        if (winner !== null) {
+          setTimeout(() => {
+            io.to(game.roomName()).emit('GAME_CONCLUDED', { gameId: game.id, winner });
+            manager.endGame(game.id);
+            io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+          }, 0);
+          return;
+        }
+        // Check for draw after bot turn
+        const drawReason = game.checkDrawCondition();
+        if (drawReason !== null) {
+          setTimeout(() => {
+            io.to(game.roomName()).emit('GAME_DRAW', { gameId: game.id, reason: drawReason });
+            manager.endGame(game.id);
+            io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+          }, 0);
+          return;
+        }
+      }
+      
+      // No inactivity timer for bot games - player can take their time
     } catch (err: any) {
       socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
     }
@@ -129,7 +149,7 @@ io.on('connection', (socket) => {
       // First broadcast the updated state so the UI shows the move
       game.broadcastState(io);
 
-      // Then check victory condition (all 3 control points)
+      // Then check victory condition (all 3 control points or elimination)
       const winner = game.checkVictory();
       if (winner !== null) {
         // Defer conclusion to next tick so clients render the move first
@@ -141,15 +161,26 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Reset/start inactivity timer only if both players are present (30s)
-      if (game.hasPlayer(0) && (game.hasPlayer(1) || game.state.players[1]?.isBot)) {
+      // Check draw conditions (turn limit, low resources, mutual invincibility)
+      const drawReason = game.checkDrawCondition();
+      if (drawReason !== null) {
+        setTimeout(() => {
+          io.to(game.roomName()).emit('GAME_DRAW', { gameId: game.id, reason: drawReason });
+          manager.endGame(game.id);
+          io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+        }, 0);
+        return;
+      }
+
+      // Reset/start inactivity timer only for PvP games (not bot games)
+      if (!game.isBotGame() && game.areBothPlayersPresent()) {
         game.startInactivityTimer(io, 30, undefined, () => {
           manager.endGame(game.id);
           io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
         });
       }
 
-      // If it's now a bot's turn, execute bot actions immediately, then broadcast and handle win/timer
+      // If it's now a bot's turn, execute bot actions immediately, then broadcast and handle win/draw
       if (game.state.players[game.state.currentPlayer]?.isBot) {
         game.executeBotTurn();
         game.broadcastState(io);
@@ -162,12 +193,16 @@ io.on('connection', (socket) => {
           }, 0);
           return;
         }
-        if (game.hasPlayer(0) && (game.hasPlayer(1) || game.state.players[1]?.isBot)) {
-          game.startInactivityTimer(io, 30, undefined, () => {
+        const drawReason2 = game.checkDrawCondition();
+        if (drawReason2 !== null) {
+          setTimeout(() => {
+            io.to(game.roomName()).emit('GAME_DRAW', { gameId: game.id, reason: drawReason2 });
             manager.endGame(game.id);
             io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
-          });
+          }, 0);
+          return;
         }
+        // No inactivity timer for bot games
       }
     } catch (err: any) {
       socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
@@ -220,6 +255,82 @@ io.on('connection', (socket) => {
       manager.endGame(game.id);
       // Update lobby lists
       io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+    } catch (err: any) {
+      socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
+    }
+  });
+
+  // Surrender: current player concedes; opponent wins
+  socket.on('SURRENDER', (payload: { gameId: string }) => {
+    try {
+      const game = manager.getGame(payload.gameId);
+      if (!game) throw new Error('Game not found');
+
+      // Determine playerId from socket mapping
+      let playerId: 0 | 1 | null = null;
+      for (const [pid, sid] of game.players.entries()) {
+        if (sid === socket.id) { playerId = pid; break; }
+      }
+      if (playerId === null) throw new Error('You are not a player in this game');
+
+      const winner: 0 | 1 = playerId === 0 ? 1 : 0;
+      io.to(game.roomName()).emit('GAME_CONCLUDED', { gameId: game.id, winner });
+      // Optionally notify explicit surrender
+      io.to(game.roomName()).emit('PLAYER_FORFEIT', { gameId: game.id, reason: 'surrender' });
+      manager.endGame(game.id);
+      io.emit('AVAILABLE_GAMES', { type: 'AVAILABLE_GAMES', games: manager.listAvailableGames() });
+    } catch (err: any) {
+      socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
+    }
+  });
+
+  // Rematch: request from one player, offer to the opponent
+  socket.on('REQUEST_REMATCH', (payload: { oldGameId: string }) => {
+    try {
+      if (!payload?.oldGameId) throw new Error('Missing oldGameId');
+      const opponent = manager.requestRematch(payload.oldGameId, socket.id, io);
+      if (!opponent) {
+        // Explicitly inform requester that rematch is unavailable (e.g., opponent disconnected or pending offer)
+        socket.emit('REMATCH_UNAVAILABLE', { oldGameId: payload.oldGameId, reason: 'unavailable' });
+        return;
+      }
+      // Acknowledge requester that offer was sent
+      socket.emit('REMATCH_REQUESTED', { oldGameId: payload.oldGameId });
+    } catch (err: any) {
+      socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
+    }
+  });
+
+  // Rematch: accept by the other player
+  socket.on('ACCEPT_REMATCH', (payload: { oldGameId: string }) => {
+    try {
+      if (!payload?.oldGameId) throw new Error('Missing oldGameId');
+      const result = manager.acceptRematch(payload.oldGameId, socket.id);
+      if (!result) throw new Error('No rematch offer to accept');
+      // Join both sockets to new room and emit rematch started
+      const game = manager.getGame(result.p0!.resp.gameId)!;
+      const room = game.roomName();
+      const p0Sock = io.sockets.sockets.get(result.p0!.socketId);
+      const p1Sock = io.sockets.sockets.get(result.p1!.socketId);
+      p0Sock?.join(room);
+      p1Sock?.join(room);
+      io.to(result.p0!.socketId).emit('REMATCH_STARTED', result.p0!.resp);
+      io.to(result.p1!.socketId).emit('REMATCH_STARTED', result.p1!.resp);
+      // Broadcast initial state
+      game.broadcastState(io);
+    } catch (err: any) {
+      socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
+    }
+  });
+
+  // Rematch: decline by opponent
+  socket.on('DECLINE_REMATCH', (payload: { oldGameId: string }) => {
+    try {
+      if (!payload?.oldGameId) throw new Error('Missing oldGameId');
+      const requester = manager.declineRematch(payload.oldGameId, socket.id);
+      if (requester) {
+        io.to(requester).emit('REMATCH_DECLINED', { oldGameId: payload.oldGameId });
+      }
     } catch (err: any) {
       socket.emit('ERROR', { message: err?.message ?? 'Unknown error' });
     }

@@ -102,12 +102,12 @@ export const UnitStatsPanel: React.FC<UnitStatsPanelProps> = ({ unit }) => {
         return (
           <>
             <div style={statRowStyle}>
-              <span style={statLabelStyle}>Beats:</span>
-              <span style={statValueStyle}>{match.beats.join(', ') || '—'}</span>
+              <span style={statLabelStyle}>Beats (Melee):</span>
+              <span style={statValueStyle}>{match.beatsMelee.join(', ') || '—'}</span>
             </div>
             <div style={statRowStyle}>
-              <span style={statLabelStyle}>Dies To:</span>
-              <span style={statValueStyle}>{match.diesTo.join(', ') || '—'}</span>
+              <span style={statLabelStyle}>Beats (Ranged):</span>
+              <span style={statValueStyle}>{match.beatsRanged.length > 0 ? match.beatsRanged.join(', ') : '—'}</span>
             </div>
           </>
         );
