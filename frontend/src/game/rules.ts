@@ -123,16 +123,28 @@ export function applyDeployUnit(state: GameState, unitKey: string, targetPos: Po
     return row;
   });
 
-  // Update per-type count
+  // Check if using free deployment (from side control point buff)
+  const hasFreeDeployment = state.freeDeploymentsRemaining > 0 && !state.hasActedThisTurn;
+
+  // Update per-type count and handle action consumption
   const playerIndex = state.currentPlayer;
   const players = state.players.map((p, i) => {
     if (i !== playerIndex) return p;
     const currentCounts = p.deploymentCounts ?? {};
     const newCounts = { ...currentCounts, [normalized]: (currentCounts[normalized] ?? 0) + 1 };
-    return { ...p, deploymentCounts: newCounts };
+    // If using free deployment, don't consume action
+    const newActionsRemaining = hasFreeDeployment 
+      ? p.actionsRemaining 
+      : Math.max(0, (p.actionsRemaining ?? 1) - 1);
+    return { ...p, deploymentCounts: newCounts, actionsRemaining: newActionsRemaining };
   });
 
-  return { ...state, grid: newGrid, players };
+  // Decrement free deployment counter if used
+  const newFreeDeploymentsRemaining = hasFreeDeployment 
+    ? state.freeDeploymentsRemaining - 1 
+    : state.freeDeploymentsRemaining;
+
+  return { ...state, grid: newGrid, players, freeDeploymentsRemaining: newFreeDeploymentsRemaining };
 }
 
 export function checkWin(state: GameState, playerId: number): boolean {
@@ -331,9 +343,20 @@ export function applyMove(state: GameState, unitId: string, target: Position): G
     return row;
   });
   
+  // Decrement actionsRemaining for the current player
+  const playerIndex = state.currentPlayer;
+  const players = state.players.map((p, i) =>
+    i === playerIndex
+      ? { ...p, actionsRemaining: Math.max(0, (p.actionsRemaining ?? 1) - 1) }
+      : p
+  );
+  
+  // Mark that a non-deployment action was taken (forfeits free deployment)
   return {
     ...state,
-    grid: newGrid
+    grid: newGrid,
+    players,
+    hasActedThisTurn: true
   };
 }
 
@@ -422,9 +445,20 @@ export function applyRotate(state: GameState, unitId: string, targetPos: Positio
     throw new Error('Rotate not allowed');
   }
   
+  // Decrement actionsRemaining for the current player
+  const playerIndex = state.currentPlayer;
+  const players = state.players.map((p, i) =>
+    i === playerIndex
+      ? { ...p, actionsRemaining: Math.max(0, (p.actionsRemaining ?? 1) - 1) }
+      : p
+  );
+  
+  // Mark that a non-deployment action was taken (forfeits free deployment)
   return {
     ...state,
-    grid: newGrid
+    grid: newGrid,
+    players,
+    hasActedThisTurn: true
   };
 }
 
@@ -627,7 +661,16 @@ export function applyAttack(state: GameState, attackerId: string, targetPos: Pos
     });
   });
 
-  return { ...state, grid: newGrid };
+  // Decrement actionsRemaining for the current player
+  const playerIndex = state.currentPlayer;
+  const players = state.players.map((p, i) =>
+    i === playerIndex
+      ? { ...p, actionsRemaining: Math.max(0, (p.actionsRemaining ?? 1) - 1) }
+      : p
+  );
+  
+  // Mark that a non-deployment action was taken (forfeits free deployment)
+  return { ...state, grid: newGrid, players, hasActedThisTurn: true };
 }
 
 export function canAttack(state: GameState, attackerId: string, targetPos: Position): boolean {
