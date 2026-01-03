@@ -6,7 +6,7 @@ import { LobbyPage } from './LobbyPage'
 import { WaitingRoom } from './WaitingRoom'
 import { PlayPage } from './PlayPage'
 import { JoinPage } from './JoinPage'
-import { connectSocket, isSocketConnected } from './socket'
+import { connectSocket } from './socket'
 
 // =============================================================================
 // AUTH INTEGRATION

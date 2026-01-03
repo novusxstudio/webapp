@@ -488,7 +488,6 @@ function App() {
           currentPlayer={gameState.currentPlayer}
           turnNumber={gameState.turnNumber}
           actionsRemaining={gameState.players[gameState.currentPlayer].actionsRemaining}
-          deploymentsRemaining={gameState.players[gameState.currentPlayer].deploymentsRemaining}
           actionMode={getActionMode()}
           freeDeploymentsRemaining={gameState.freeDeploymentsRemaining}
           winner={winner}
