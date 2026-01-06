@@ -2,6 +2,9 @@
 
 A multiplayer turn-based strategy game where two players (or player vs bot/AI) place and maneuver units on a 5×5 grid to control three central points. Features human vs human, human vs scripted bots, and human vs RL-trained neural network agents.
 
+Play the game: https://www.novusxstudio.com/
+
+
 ## High-Level Architecture
 
 ```
